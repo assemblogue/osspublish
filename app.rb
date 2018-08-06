@@ -4,26 +4,42 @@ require 'zip'
 require 'tempfile'
 require 'thwait'
 require 'logger'
+require 'roo'
+require 'securerandom'
 
-configure { set :server, :puma }
 
-def convert(files, tmpdir, logger)
+def spreadsheet_to_csv(path, tmpdir)
+  ret = path
+  begin
+    xlsx = Roo::Spreadsheet.open(path)
+    File::open(File::join(tmpdir, File::basename(path) + SecureRandom::hex + '.csv'), 'w') do |f|
+      f.write(xlsx.to_csv)
+      ret = f.path
+    end
+  rescue ArgumentError
+    # pass
+  end
+  ret
+end
+
+def JSONize(files, tmpdir, logger)
   ofiles = []
   threads = []
   
   files.each do |f|
-    base = File.basename(f, suffix='.csv')
-    ofiles << "#{tmpdir}/#{base}"
+    base = File.join(tmpdir, File.basename(f, suffix='.csv'))
+    ofiles << base
     threads << Thread.new do
       logger.info("Starting #{f.path}")
-      logger.info("cat #{f.path} | perl plrv2/contentsdata/cto/cto.pl #{tmpdir}/#{base} #{base}")
-      system("cat #{f.path} | perl plrv2/contentsdata/cto/cto.pl #{tmpdir}/#{base} ''")
+      logger.info("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''")
+      system("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''")
       logger.info("Finishing #{f.path}")
     end
     
     threads << Thread.new do
       logger.info("Starting #{f.path}")
-      system("cat #{f.path} | perl plrv2/contentsdata/cto/cts.pl #{tmpdir}/#{base} ''")
+      
+      system("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cts.pl #{base} ''")
       logger.info("Finishing #{f.path}")
     end
   end
@@ -33,6 +49,9 @@ def convert(files, tmpdir, logger)
     yield f
   end
 end
+
+class App < Sinatra::Base
+  configure { set :server, :puma }
 
 get '/' do
   erb :form
@@ -45,12 +64,11 @@ post '/convert' do
   logger.level = Logger::INFO
 
   files = request.env['rack.tempfiles']
-  zip = Tempfile.create(['convert', '.zip']).path
+  zip = Tempfile.create(['converted', '.zip']).path
   logger.info("Reading #{files.inspect}")
   Dir.mktmpdir do |tmpdir|
     Zip::File.open(zip, Zip::File::CREATE) do |zipfile|
-      tmpdir = '/tmp/my'
-      convert(files, tmpdir, logger) do |x|
+      JSONize(files, tmpdir, logger) do |x|
         logger.info("Adding #{x}")
         zipfile.add(File.basename(x), x)
         zipfile.commit()
@@ -64,4 +82,6 @@ end
 
 get '/env' do
   ENV.inspect
+end
+
 end
