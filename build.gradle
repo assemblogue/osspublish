@@ -1,19 +1,22 @@
-
-apply plugin: 'java'
-
-apply plugin: 'application'
+plugins {
+	id 'java'
+	id 'application'
+	id 'org.openjfx.javafxplugin' version '0.0.7'
+	id "com.github.johnrengelman.shadow" version "4.0.4"
+}
 
 repositories {
-    jcenter()
+	jcenter()
+}
+
+javafx {
+	modules = [ 'javafx.controls', 'javafx.fxml' ]
 }
 
 dependencies {
-    compile fileTree(include: ['*.jar'], dir: 'libs')
+	compile fileTree(include: ['*.jar'], dir: 'libs')
 
-    compile 'com.google.guava:guava:21.0'
-
-    testCompile 'junit:junit:4.12'
+	testImplementation 'junit:junit:4.12'
 }
 
 mainClassName = 'App'
-
