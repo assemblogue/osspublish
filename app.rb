@@ -1,5 +1,5 @@
 require 'sinatra'
-require "sinatra/reloader" if development?
+require 'sinatra/reloader' if development?
 require 'zip'
 require 'tempfile'
 require 'thwait'
@@ -12,7 +12,7 @@ def spreadsheet_to_csv(path, tmpdir)
   ret = path
   begin
     xlsx = Roo::Spreadsheet.open(path)
-    File::open(File::join(tmpdir, File::basename(path) + SecureRandom::hex + '.csv'), 'w') do |f|
+    File.open(File.join(tmpdir, File.basename(path) + SecureRandom.hex + '.csv'), 'w') do |f|
       f.write(xlsx.to_csv)
       ret = f.path
     end
@@ -27,7 +27,7 @@ def JSONize(files, tmpdir, logger)
   threads = []
   
   files.each do |f|
-    base = File.join(tmpdir, File.basename(f, suffix='.csv'))
+    base = File.join(tmpdir, File.basename(f, '.csv'))
     ofiles << base
     threads << Thread.new do
       logger.info("Starting #{f.path}")
@@ -50,26 +50,28 @@ def JSONize(files, tmpdir, logger)
   end
 end
 
+# proxy IO for multiple IOs
 class MultiIO
   def initialize(*targets)
     @targets = targets
   end
-  
+ 
   def write(*args)
     @targets.each {|t| t.write(*args)}
   end
-  
+
   def close
     @targets.each(&:close)
   end
 end
 
+# main class App
 class App < Sinatra::Base
   configure do
     set :server, :puma
   end
   configure :test do
-    
+
   end
 
   get '/' do
@@ -79,11 +81,11 @@ class App < Sinatra::Base
   post '/convert' do
     logfile = Tempfile.create(['log', '.txt']).path
     puts "Running #{settings.environment}, logging in #{logfile}"
-    logger = if settings.environment == :test then
-               logger = Logger.new(MultiIO.new(STDERR, open(logfile, 'a')))
+    logger = if settings.environment == :test
+               logger = Logger.new(MultiIO.new(STDERR, File.open(logfile, 'a')))
                logger.level = Logger::DEBUG
                logger
-             elsif settings.environment == :test then
+             elsif settings.environment == :test
                logger = Logger.new(logfile)
                logger.level = Logger::DEBUG
                logger
@@ -108,7 +110,8 @@ class App < Sinatra::Base
             index[link] << {
               'file' => File.basename(path),
               'label' => label,
-              'format' => 'application/ld+json'}
+              'format' => 'application/ld+json'
+            }
           end
         end
         Tempfile.create('tmp') do |f|
@@ -116,13 +119,13 @@ class App < Sinatra::Base
           f.flush
           zipfile.add('index.json', f)
           zipfile.add('log.txt', logfile)
-          zipfile.commit()
-          send_file(zip, {:filename => File.basename(zip)})
+          zipfile.commit
+          send_file(zip, filename: File.basename(zip))
         end
       end
     end
   end
-  
+
   get '/env' do
     ENV.inspect
   end

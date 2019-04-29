@@ -1,4 +1,5 @@
 # coding: utf-8
+
 require 'json'
 require 'digest'
 
@@ -12,7 +13,7 @@ require 'digest'
 class Hash
   def lookup_by_any_key(ls)
     ls.each do |x|
-      if self.has_key?(x)
+      if self.key?(x)
         yield self[x]
         break
       end
@@ -33,27 +34,23 @@ def get_link_and_label(path)
 
   link = 'ontology'
   suffix = path[/(_stylesheet_[^\d]*)\d*.jsonld$/, 1]
-  if suffix then
-    link = map[suffix]
-  end
+  link = map[suffix] if suffix
 
   lab = nil
-  open(path) do |f|
+  File.open(path) do |f|
     json = JSON.load(f)
-    json.each_pair do |k,v|
-      if v.is_a?(Hash) and v.has_key?('label')
+    json.each_pair do |_, v|
+      if v.is_a?(Hash) and v.key?('label')
         lab = v['label']
         break
       end
     end
     json.lookup_by_any_key(['summary', 'questionnaire']) do |v|
       v.lookup_by_any_key(['channel', 'unit', 'questionnaire']) do |w|
-        if w.is_a?(Hash) then
-          lab = w['label']
-        end
+        lab = w['label'] if w.is_a?(Hash)
       end
     end
-    if not lab and json.has_key?('label') then
+    if not lab and json.key?('label') then
       lab = json['label']
     end
   end
@@ -61,19 +58,19 @@ def get_link_and_label(path)
   ## TODO ['summary']['channel']['label'] questionnaire.questionnaire.label を認識
 
   if not link or not lab then
-    STDERR.puts 'ERROR - SKIPPED ' + [path, link, lab].inspect
+    warn 'ERROR - SKIPPED ' + [path, link, lab].inspect
     return
   end
   yield link, lab
 end
 
 def my_basename(path)
-  f = File::basename(path)
-  base = f[/([^\/]+?)(_stylesheet_.*|).jsonld$/, 1]
+  f = File.basename(path)
+  base = f[%r{([^\/]+?)(_stylesheet_.*|).jsonld$}, 1]
   base
 end
 
-if __FILE__ == $0 then
+if $PROGRAM_NAME == __FILE__
   account = 'plr@assemblogue.com'
   puts ''
   puts 'new oss inner OSS'
@@ -85,9 +82,7 @@ if __FILE__ == $0 then
       puts "new #{link} file #{path}"
       puts ''
       label.each_pair do |lang, title|
-        if lang == '' then
-          lang = '*'
-        end
+        lang = '*' if lang == ''
         puts "#{i} title #{lang} #{title}"
       end
       puts "#{i} format application/ld+json"
