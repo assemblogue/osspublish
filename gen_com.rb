@@ -73,30 +73,32 @@ def my_basename(path)
   base
 end
 
-account = 'plr@assemblogue.com'
-puts ''
-puts 'new oss inner OSS'
-puts 'o 0'
-puts ''
-i = 0
-ARGV.each do |path|
-  get_link_and_label(path) do |link, label|
-    puts "new #{link} file #{path}"
-    puts ''
-    label.each_pair do |lang, title|
-      if lang == '' then
-        lang = '*'
+if __FILE__ == $0 then
+  account = 'plr@assemblogue.com'
+  puts ''
+  puts 'new oss inner OSS'
+  puts 'o 0'
+  puts ''
+  i = 0
+  ARGV.each do |path|
+    get_link_and_label(path) do |link, label|
+      puts "new #{link} file #{path}"
+      puts ''
+      label.each_pair do |lang, title|
+        if lang == '' then
+          lang = '*'
+        end
+        puts "#{i} title #{lang} #{title}"
       end
-      puts "#{i} title #{lang} #{title}"
+      puts "#{i} format application/ld+json"
+      puts "#{i} peer"
+      base = my_basename(path)
+      key = [link, label.to_a].inspect
+      puts "new ossId literal * #{account}##{Digest::SHA256.hexdigest(key)[0..15]}##{base}_#{link}"
+      puts 'b'
+      puts 'l'
+      puts ''
+      i += 1
     end
-    puts "#{i} format application/ld+json"
-    puts "#{i} peer"
-    base = my_basename(path)
-    key = [link, label.to_a].inspect
-    puts "new ossId literal * #{account}##{Digest::SHA256.hexdigest(key)[0..15]}##{base}_#{link}"
-    puts 'b'
-    puts 'l'
-    puts ''
-    i += 1
   end
 end

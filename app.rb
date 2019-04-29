@@ -6,7 +6,7 @@ require 'thwait'
 require 'logger'
 require 'roo'
 require 'securerandom'
-
+require './gen_com'
 
 def spreadsheet_to_csv(path, tmpdir)
   ret = path
@@ -50,38 +50,80 @@ def JSONize(files, tmpdir, logger)
   end
 end
 
-class App < Sinatra::Base
-  configure { set :server, :puma }
-
-get '/' do
-  erb :form
-end
-
-post '/convert' do
-  logfile = Tempfile.create(['log', '.txt']).path
-  puts "Logging in #{logfile}"
-  logger = Logger.new(logfile)
-  logger.level = Logger::INFO
-
-  files = request.env['rack.tempfiles']
-  zip = Tempfile.create(['converted', '.zip']).path
-  logger.info("Reading #{files.inspect}")
-  Dir.mktmpdir do |tmpdir|
-    Zip::File.open(zip, Zip::File::CREATE) do |zipfile|
-      JSONize(files, tmpdir, logger) do |x|
-        logger.info("Adding #{x}")
-        zipfile.add(File.basename(x), x)
-        zipfile.commit()
-      end
-      zipfile.add('log.txt', logfile)
-      zipfile.commit()
-      send_file(zip, {:filename => File.basename(zip)})
-    end
+class MultiIO
+  def initialize(*targets)
+    @targets = targets
+  end
+  
+  def write(*args)
+    @targets.each {|t| t.write(*args)}
+  end
+  
+  def close
+    @targets.each(&:close)
   end
 end
 
-get '/env' do
-  ENV.inspect
-end
+class App < Sinatra::Base
+  configure do
+    set :server, :puma
+  end
+  configure :test do
+    
+  end
 
+  get '/' do
+    erb :form
+  end
+
+  post '/convert' do
+    logfile = Tempfile.create(['log', '.txt']).path
+    puts "Running #{settings.environment}, logging in #{logfile}"
+    logger = if settings.environment == :test then
+               logger = Logger.new(MultiIO.new(STDERR, open(logfile, 'a')))
+               logger.level = Logger::DEBUG
+               logger
+             elsif settings.environment == :test then
+               logger = Logger.new(logfile)
+               logger.level = Logger::DEBUG
+               logger
+             else
+               logger = Logger.new(logfile)
+               logger.level = Logger::INFO
+               logger
+             end
+
+    files = request.env['rack.tempfiles']
+    zip = Tempfile.create(['converted', '.zip']).path
+    logger.info("Reading #{files.inspect}")
+    Dir.mktmpdir do |tmpdir|
+      Zip::File.open(zip, Zip::File::CREATE) do |zipfile|
+        index = {}
+        JSONize(files, tmpdir, logger) do |path|
+          logger.info("Adding #{path}")
+          zipfile.add(File.basename(path), path)
+          zipfile.commit()
+          get_link_and_label(path) do |link, label|
+            index[link] ||= []
+            index[link] << {
+              'file' => File.basename(path),
+              'label' => label,
+              'format' => 'application/ld+json'}
+          end
+        end
+        Tempfile.create('tmp') do |f|
+          f.puts index.to_json
+          f.flush
+          zipfile.add('index.json', f)
+          zipfile.add('log.txt', logfile)
+          zipfile.commit()
+          send_file(zip, {:filename => File.basename(zip)})
+        end
+      end
+    end
+  end
+  
+  get '/env' do
+    ENV.inspect
+  end
 end
