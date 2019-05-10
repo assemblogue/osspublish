@@ -4,20 +4,18 @@ import com.assemblogue.plr.lib.FileNode
 import com.assemblogue.plr.lib.PLR
 import com.assemblogue.plr.lib.model.PublicRoot
 import com.assemblogue.plr.util.NodeSchemas
-import java.io.FileReader
-import java.io.File
-import java.util.zip.ZipFile
-import java.time.Instant
-
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.*
+import java.io.File
+import java.io.FileReader
 import java.io.FileWriter
-import java.lang.NumberFormatException
 import java.net.URL
 import java.security.MessageDigest
 import java.text.MessageFormat
+import java.time.Instant
 import java.util.*
+import java.util.zip.ZipFile
 
 data class FileToUpload (val linkName: String, val labels: Map<String, String>,
                          val format:String="application/ld+json", val content:String="")
@@ -36,10 +34,12 @@ class Hasher {
 class Res {
     private val formatter = MessageFormat("")
     fun format(messageId: String, vararg args: Any): String {
-        formatter.applyPattern(ResourceBundle.getBundle("messages").getString(messageId))
+        formatter.applyPattern(ResourceBundle.getBundle("messages", XMLResourceBundleControl()).getString(messageId))
         return formatter.format(args)
     }
 }
+
+
 
 class Client {
 

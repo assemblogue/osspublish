@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+    <entry key="accessing_account">ロード中: {0}</entry>
+    <entry key="enter_new_id">IDを入力してください...</entry>
+    <entry key="select_or_enter_new_id">[{0,number,integer}-{1,number,integer}]から選択するか新しいIDを入力してください...</entry>
+</properties>
