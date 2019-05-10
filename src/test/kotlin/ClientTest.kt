@@ -3,6 +3,7 @@
  */
 import Client.Companion.generateOssId
 import Client.Companion.parseFileToUpload
+import Client.Companion.findExportUrl
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -39,5 +40,11 @@ class ClientTest {
     fun testGenerateOssId() {
         assertEquals("plr@assemblogue.com#bebf864fe47cca82#Base_ontology",
                 generateOssId("ontology", hashMapOf("" to "Base!", "ja" to "基本!"), "Base", "plr@assemblogue.com"))
+    }
+
+    @Test
+    fun testGoogleSpreadsheetExportUrl() {
+        assertEquals("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/export",
+                findExportUrl("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/edit"))
     }
 }

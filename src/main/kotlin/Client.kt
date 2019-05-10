@@ -7,6 +7,7 @@ import com.assemblogue.plr.util.NodeSchemas
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.*
+import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
@@ -131,19 +132,19 @@ class Client {
             return generateOssId(file.linkName, file.labels, file.labels[""]?:"", userId)
         }
 
-        fun convertUsingOnlineService(spreadsheet: File, endpoint: URL): Map<String, String> {
+        fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
             val client = OkHttpClient()
             val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart(
-                        "file", spreadsheet.name,
-                        RequestBody.create(MediaType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), spreadsheet))
+                        "file", name,
+                        RequestBody.create(MediaType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), content))
                     .build()
             val request = Request.Builder()
                     .url(endpoint)
                     .post(requestBody)
                     .build()
             val response = client.newCall(request).execute()
-            val bytes = response.body()!!.byteStream().readBytes()
+            val bytes = response.body()!!.bytes()
             val file = createTempFile("oss", ".zip")
             file.writeBytes(bytes)
             System.err.println("temp file: $file")
@@ -161,7 +162,14 @@ class Client {
 
         fun findConfigOrCreate(file: File, defaults: Map<String, String>): Properties {
             return if (file.exists()) {
-                Properties().also{ it.load(FileReader(file)) }
+                Properties().also{ props ->
+                    props.load(FileReader(file))
+                    defaults.forEach{ (k, v) ->
+                        if (props.getProperty(k) == null) {
+                            props.setProperty(k, v)
+                        }
+                    }
+                }
             } else {
                 Properties().also { props ->
                     defaults.forEach{ (k, v) ->
@@ -179,59 +187,7 @@ class Client {
             fileNode.peerEntity.newLiteral(NodeSchemas.PROP_OSS_ID).value = id
         }
 
-        @JvmStatic
-        fun main(args: Array<String>) {
-            val plr = (PLR.createBuilder() as com.assemblogue.plr.lib.generic.PlrBuilder).build()!!
-            val props = findConfigOrCreate(
-                    File("config.properties"),
-                    mapOf("plr.oss.endpoint" to "https://osscon.herokuapp.com/convert")
-            )
-            val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
-
-            try {
-                val storage = authenticateAndGetStorage(plr, plrId)
-                val root = plr.getPublicRoot(storage)
-                root.syncAndWait()
-                val ossNode = getPropOssOrCreate(root)
-
-                if (args.isNotEmpty()) {
-                    val fileEntries = if (args[0].endsWith(".xlsx")) {
-                        convertUsingOnlineService(File(args[0]), URL(props.getProperty("plr.oss.endpoint")))
-                    } else {
-                        unzipFile(File(args[0]))
-                    }
-                    val filesToUpload = filesToUpload(
-                            ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
-                    ).associate { Pair(generateOssId(it, storage.userId), it) }
-                    val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(generateOssId(x), x) }
-                    filesToUpload.forEach { (id, file) ->
-                        if (filesInStorage.contains(id)) {
-                            println("Overwriting ${file.labels}: $id")
-                            filesInStorage.getValue(id).node.let { n ->
-                                println(n.id)
-                                n.put(file.content.toByteArray())
-                                n.put(file.content.toByteArray()) // TODO: https://gitlab.com/ikeyan/plrv2/issues/3
-                            }
-                        } else {
-                            println("New ${file.labels}: $id")
-                            putNewFileToStorage(ossNode, file, id)
-                        }
-                    }
-                    ossNode.syncAndWait()
-                    listFilesInStorage(ossNode).forEach(::println)
-                } else {
-                    val res = Res()
-                    println(res.format("accessing_account", plrId))
-                    println("-----")
-                    listFilesInStorage(ossNode).forEach(::println)
-                    println("-----")
-                }
-            } finally {
-                plr.destroy()
-            }
-        }
-
-        private fun selectIdFromStorageList(plr: PLR): String {
+        fun selectIdFromStorageList(plr: PLR): String {
             val list = plr.listStorages()
             val res = Res()
             return if (list.isEmpty()) {
@@ -251,5 +207,88 @@ class Client {
                 }
             }
         }
+
+        fun findExportUrl(url: String): String {
+            return url.replace(Regex("(https://docs\\.google\\.com/spreadsheets/.*)/(edit|view)"), "$1/export")
+        }
+
+        fun findOntologyName(bytes: ByteArray): String {
+            val wb = WorkbookFactory.create(bytes.inputStream())
+            val sheet = wb.getSheetAt(0)
+            val text = sheet.getRow(0).getCell(0).stringCellValue
+            return text.split(Regex("\\s"), 3)[1]
+        }
+
+        @JvmStatic
+        fun main(args: Array<String>) {
+            val plr = (PLR.createBuilder() as com.assemblogue.plr.lib.generic.PlrBuilder).build()!!
+            val props = findConfigOrCreate(
+                    File("config.properties"),
+                    mapOf("plr.oss.endpoint" to "https://osscon.herokuapp.com/convert")
+            )
+            val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
+
+            try {
+                val storage = authenticateAndGetStorage(plr, plrId)
+                val root = plr.getPublicRoot(storage)
+                root.syncAndWait()
+                val ossNode = getPropOssOrCreate(root)
+
+                if (args.isNotEmpty()) {
+                    args.forEach { arg ->
+                        val fileEntries = when {
+                            arg.startsWith("http") -> {
+                                val client = OkHttpClient()
+
+                                val request = Request.Builder()
+                                        .url(findExportUrl(arg))
+                                        .get()
+                                        .build()
+                                val response = client.newCall(request).execute()
+                                val bytes =  response.body()!!.bytes()
+                                convertUsingOnlineService(
+                                        bytes,
+                                        findOntologyName(bytes) + ".xlsx",
+                                        URL(props.getProperty("plr.oss.endpoint"))
+                                )
+                            }
+                            arg.endsWith(".xlsx") -> convertUsingOnlineService(
+                                    File(arg).readBytes(),
+                                    File(arg).name,
+                                    URL(props.getProperty("plr.oss.endpoint"))
+                            )
+                            else -> unzipFile(File(arg))
+                        }
+                        val filesToUpload = filesToUpload(
+                                ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
+                        ).associate { Pair(generateOssId(it, storage.userId), it) }
+                        val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(generateOssId(x), x) }
+                        filesToUpload.forEach { (id, file) ->
+                            if (filesInStorage.contains(id)) {
+                                println("Overwriting ${file.labels}: $id")
+                                filesInStorage.getValue(id).node.let { n ->
+                                    n.put(file.content.toByteArray())
+                                    n.put(file.content.toByteArray()) // TODO: https://gitlab.com/ikeyan/plrv2/issues/3
+                                }
+                            } else {
+                                println("New ${file.labels}: $id")
+                                putNewFileToStorage(ossNode, file, id)
+                            }
+                        }
+                    }
+                    ossNode.syncAndWait()
+                    listFilesInStorage(ossNode).forEach(::println)
+                } else {
+                    val res = Res()
+                    println(res.format("accessing_account", plrId))
+                    println("-----")
+                    listFilesInStorage(ossNode).forEach(::println)
+                    println("-----")
+                }
+            } finally {
+                plr.destroy()
+            }
+        }
+
     }
 }
