@@ -9,7 +9,7 @@ https://osscon.herokuapp.com - スプレッドシート(xlsx)をJSONLDの束(zip
 
 ## ビルド方法
 
-osscon-all.jar を作成するには https://drive.google.com/drive/u/0/folders/182s6nytpYtOHoNH-0ko6ggIV8otCMGoI の plr2_lib_generic.jar を libs/ に配置してから、下記のコマンドを使ってください。
+osscon-all.jar を作成するには https://drive.google.com/drive/u/0/folders/182s6nytpYtOHoNH-0ko6ggIV8otCMGoI の `plr2_lib_generic.jar` を libs/ に配置してから、下記のコマンドを使ってください。
 
     gradle shadowJar
 
@@ -22,6 +22,8 @@ config.properties ファイルに下記のような内容を用意してくだ�
 スプレッドシート Sample.xlsx を引数とする場合は下記のようなコマンドで起動してください。
 
     java -jar osscon-all.jar Sample.xlsx
+
+この方法を使うと、起動のたびに `osscon.herokuapp.com` にアクセスします。
 
 ## 使用方法（ローカルサーバー利用）
 
@@ -45,3 +47,5 @@ config.properties ファイルに下記のような内容を用意してくだ�
   plr.zip, plr_manual.txt:
   https://drive.google.com/drive/u/0/folders/182s6nytpYtOHoNH-0ko6ggIV8otCMGoI
   
+- 初回更新後に `EntryNotFoundException` が表示される場合は、おそらく作成自体は成功しています。
+- タイムアウトが表示される場合、もう一度試してみてください（herokuappは長時間使われないと一旦停止し、再起動に時間がかかります）。

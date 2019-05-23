@@ -17,6 +17,7 @@ import java.text.MessageFormat
 import java.time.Instant
 import java.util.*
 import java.util.zip.ZipFile
+import java.util.concurrent.TimeUnit
 
 data class FileToUpload (val linkName: String, val labels: Map<String, String>,
                          val format:String="application/ld+json", val content:String="")
@@ -133,7 +134,11 @@ class Client {
         }
 
         fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
-            val client = OkHttpClient()
+            val client = OkHttpClient.Builder()
+                    .connectTimeout(60000L, TimeUnit.MILLISECONDS)
+                    .callTimeout(60000L, TimeUnit.MILLISECONDS)
+                    .readTimeout(60000L, TimeUnit.MILLISECONDS)
+                    .build()
             val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart(
                         "file", name,
@@ -209,7 +214,7 @@ class Client {
         }
 
         fun findExportUrl(url: String): String {
-            return url.replace(Regex("(https://docs\\.google\\.com/spreadsheets/.*)/(edit|view)"), "$1/export")
+            return url.replace(Regex("(https://docs\\.google\\.com/spreadsheets/.*)/(edit|view)([#\\?].*|)"), "$1/export")
         }
 
         fun findOntologyName(bytes: ByteArray): String {
@@ -227,6 +232,7 @@ class Client {
                     mapOf("plr.oss.endpoint" to "https://osscon.herokuapp.com/convert")
             )
             val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
+            val res = Res()
 
             try {
                 val storage = authenticateAndGetStorage(plr, plrId)
@@ -265,10 +271,13 @@ class Client {
                         val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(generateOssId(x), x) }
                         filesToUpload.forEach { (id, file) ->
                             if (filesInStorage.contains(id)) {
-                                println("Overwriting ${file.labels}: $id")
+                                println(res.format("overwriting", file.labels, id))
                                 filesInStorage.getValue(id).node.let { n ->
-                                    n.put(file.content.toByteArray())
-                                    n.put(file.content.toByteArray()) // TODO: https://gitlab.com/ikeyan/plrv2/issues/3
+                                    if (n.get().readBytes().contentEquals(file.content.toByteArray())) {
+                                        println(res.format("skipped_unchanged"))
+                                    } else {
+                                        n.put(file.content.toByteArray())
+                                    }
                                 }
                             } else {
                                 println("New ${file.labels}: $id")
@@ -279,8 +288,12 @@ class Client {
                     ossNode.syncAndWait()
                     listFilesInStorage(ossNode).forEach(::println)
                 } else {
-                    val res = Res()
                     println(res.format("accessing_account", plrId))
+                    println(Instant.ofEpochMilli(ossNode.meta.lastModified()))
+                    ossNode.entry.sharingUsers.forEach {
+                        println(it)
+                    }
+
                     println("-----")
                     listFilesInStorage(ossNode).forEach(::println)
                     println("-----")

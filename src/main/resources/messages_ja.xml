@@ -3,5 +3,8 @@
 <properties>
     <entry key="accessing_account">ロード中: {0}</entry>
     <entry key="enter_new_id">IDを入力してください...</entry>
+    <entry key="overwriting">上書き中 {0}: {1}</entry>
+    <entry key="overwriting_skipped">スキップしました</entry>
     <entry key="select_or_enter_new_id">[{0,number,integer}-{1,number,integer}]から選択するか新しいIDを入力してください...</entry>
+    <entry key="skipped_unchanged">スキップしました（変更点なし）</entry>
 </properties>

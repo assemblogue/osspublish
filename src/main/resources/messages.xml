@@ -3,6 +3,9 @@
 <properties>
 <entry key="accessing_account">Loding account: {0}</entry>
 <entry key="enter_new_id">enter a new ID: </entry>
-<entry key="select_or_enter_new_id">select from [{0,number,integer}-{1,number,integer}] or enter a new ID: 
+    <entry key="overwriting">Overwriting {0}: {1}</entry>
+    <entry key="overwriting_skipped">Skipped</entry>
+    <entry key="select_or_enter_new_id">select from [{0,number,integer}-{1,number,integer}] or enter a new ID:
 </entry>
+    <entry key="skipped_unchanged">Skipped - no change detected</entry>
 </properties>

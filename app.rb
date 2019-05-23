@@ -9,45 +9,37 @@ require 'securerandom'
 require './gen_com'
 
 def spreadsheet_to_csv(path, tmpdir)
-  ret = path
   begin
     xlsx = Roo::Spreadsheet.open(path)
-    File.open(File.join(tmpdir, File.basename(path) + SecureRandom.hex + '.csv'), 'w') do |f|
+    fpath = File.join(tmpdir, File.basename(path) + SecureRandom.hex + '.csv')
+    return File.open(fpath, 'w') do |f|
       f.write(xlsx.to_csv)
-      ret = f.path
+      f.path
     end
   rescue ArgumentError
-    # pass
   end
-  ret
+  path
+end
+
+def run_command_async(command, logger)
+  Thread.new do
+    logger.info("Running command: #{command}")
+    system(command)
+    logger.info("Finishing: #{command}")
+    yield if block_given?
+  end
 end
 
 def JSONize(files, tmpdir, logger)
-  ofiles = []
-  threads = []
-  
-  files.each do |f|
+  threads = files.map do |f|
     base = File.join(tmpdir, File.basename(f, '.csv'))
-    ofiles << base
-    threads << Thread.new do
-      logger.info("Starting #{f.path}")
-      logger.info("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''")
-      system("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''")
-      logger.info("Finishing #{f.path}")
-    end
-    
-    threads << Thread.new do
-      logger.info("Starting #{f.path}")
-      
-      system("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cts.pl #{base} ''")
-      logger.info("Finishing #{f.path}")
-    end
-  end
+    [run_command_async("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''", logger),
+     run_command_async("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cts.pl #{base} ''", logger)]
+  end.flatten
   ThreadsWait.all_waits(*threads)
-  
-  Dir.glob("#{tmpdir}/*.jsonld").each do |f|
-    yield f
-  end
+
+  Dir.glob("#{tmpdir}/*.jsonld")
+    .reject { |f| f =~ /(Context|_stylesheet)\.jsonld$/ }
 end
 
 # proxy IO for multiple IOs
@@ -55,9 +47,9 @@ class MultiIO
   def initialize(*targets)
     @targets = targets
   end
- 
+
   def write(*args)
-    @targets.each {|t| t.write(*args)}
+    @targets.each { |t| t.write(*args) }
   end
 
   def close
@@ -70,8 +62,8 @@ class App < Sinatra::Base
   configure do
     set :server, :puma
   end
-  configure :test do
 
+  configure :test do
   end
 
   get '/' do
@@ -101,7 +93,7 @@ class App < Sinatra::Base
     Dir.mktmpdir do |tmpdir|
       Zip::File.open(zip, Zip::File::CREATE) do |zipfile|
         index = {}
-        JSONize(files, tmpdir, logger) do |path|
+        JSONize(files, tmpdir, logger).each do |path|
           logger.info("Adding #{path}")
           zipfile.add(File.basename(path), path)
           zipfile.commit()

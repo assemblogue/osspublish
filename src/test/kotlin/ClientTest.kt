@@ -43,8 +43,14 @@ class ClientTest {
     }
 
     @Test
-    fun testGoogleSpreadsheetExportUrl() {
+    fun `normalize Google spreadsheet export url`() {
         assertEquals("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/export",
                 findExportUrl("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/edit"))
+    }
+
+    @Test
+    fun `normalize Google spreadsheet export url with parameter`() {
+        assertEquals("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/export",
+                findExportUrl("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/edit?usp=drive_web"))
     }
 }
