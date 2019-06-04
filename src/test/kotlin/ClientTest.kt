@@ -5,8 +5,8 @@ import Client.Companion.generateOssId
 import Client.Companion.parseFileToUpload
 import Client.Companion.findExportUrl
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import kotlin.test.assertEquals
 
 class ClientTest {
     @Test

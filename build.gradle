@@ -13,15 +13,22 @@ repositories {
 }
 
 dependencies {
+	implementation fileTree(include: ['*.jar'], dir: 'libs')
+	implementation 'org.jetbrains.kotlin:kotlin-stdlib'
 	implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.9.8'
 	implementation group: 'com.squareup.okhttp3', name:'okhttp', version: '3.14.1'
 	implementation group: 'org.apache.poi', name: 'poi', version: '4.1.0'
 	implementation group: 'org.apache.poi', name: 'poi-ooxml', version: '4.1.0'
+	testImplementation 'org.junit.jupiter:junit-jupiter-api:5.4.2'
+	testRuntime 'org.junit.jupiter:junit-jupiter-engine:5.4.2'
+}
 
-	implementation fileTree(include: ['*.jar'], dir: 'libs')
-	implementation "org.jetbrains.kotlin:kotlin-stdlib"
-	testImplementation "org.jetbrains.kotlin:kotlin-test"
-	testImplementation "org.jetbrains.kotlin:kotlin-test-junit5"
+test {
+	useJUnitPlatform()
+	testLogging.showStandardStreams = true
+	testLogging {
+		events "PASSED", "FAILED", "SKIPPED", "STANDARD_OUT", "STANDARD_ERROR"
+	}
 }
 
 mainClassName = "Client"
