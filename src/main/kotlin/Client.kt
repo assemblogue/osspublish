@@ -84,13 +84,13 @@ class Client {
             return if (root.propertyNames().contains(NodeSchemas.PROP_OSS)) {
                 root.getProperty(NodeSchemas.PROP_OSS)[0].asEntity()
             } else {
-                root.node.newEntity(
+                val ossNode = root.node.newEntity(
                         NodeSchemas.PROP_OSS,
                         NodeSchemas.CLASS_OSS,
                         false,
-                        true).also {
-                    it.syncAndWait()
-                }
+                        true)
+                root.node.syncAndWait()
+                ossNode
             }
         }
 
@@ -159,7 +159,11 @@ class Client {
         fun listFilesInStorage(ossNode: EntityNode): Sequence<String> {
             return filesInStorage(ossNode).asSequence().map { file ->
                 val (ver, date) = file.node.entry.let {
-                    Pair(it.listRevisions().size, Instant.ofEpochMilli(it.meta.lastModified()))
+                    try {
+                        Pair(it.listRevisions().size, Instant.ofEpochMilli(it.meta.lastModified()))
+                    } catch (e: com.assemblogue.plr.io.EntryNotFoundException) {
+                        Pair(-1, Instant.ofEpochMilli(0))
+                    }
                 }
                 "${file.linkName} v$ver $date ${generateOssId(file)} ${file.labels}"
             }
@@ -239,7 +243,8 @@ class Client {
                 val root = plr.getPublicRoot(storage)
                 root.syncAndWait()
                 val ossNode = getPropOssOrCreate(root)
-
+                ossNode.syncAndWait()
+                
                 if (args.isNotEmpty()) {
                     args.forEach { arg ->
                         val fileEntries = when {

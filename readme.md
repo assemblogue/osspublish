@@ -4,7 +4,7 @@ SpreadSheet.docx - スプレッドシートの書式の定義文書です。
 
 osscon-all.jar - コマンドラインに渡したOSSを、自分のPLRアカウントの所定の位置に配置するツールです。必要に応じて下記のURLを呼び出します。
 
-https://osscon.herokuapp.com - スプレッドシート(xlsx)をJSONLDの束(zip)に変換するツールです。
+https://osscon.herokuapp.com - スプレッドシート(xlsx)をJSONLDの束(zip)に変換する外部サーバーです。
 
 
 ## ビルド方法
@@ -42,6 +42,7 @@ config.properties ファイルに下記のような内容を用意してくだ�
 
 ## 注意点
 
+- config.properties はカレントディレクトリに作成してください。
 - OSSファイルを削除する機能がまだありません。下記のplrコマンドをお使いください。public root を開き、oss 以下にあるファイルから、削除したいものを探して削除してください。
   
   plr.zip, plr_manual.txt:
