@@ -81,16 +81,23 @@ class Client {
         }
 
         fun getPropOssOrCreate(root: PublicRoot): EntityNode {
-            return if (root.propertyNames().contains(NodeSchemas.PROP_OSS)) {
-                root.getProperty(NodeSchemas.PROP_OSS)[0].asEntity()
-            } else {
-                val ossNode = root.node.newEntity(
+            val c = root.getProperty(NodeSchemas.PROP_OSS).filter { it.isEntity() && it.asEntity().isInner() }.map { it.asEntity() }
+            when (c.size) {
+                0 -> {
+                    val ossNode = root.node.newInnerEntity(
                         NodeSchemas.PROP_OSS,
-                        NodeSchemas.CLASS_OSS,
-                        false,
-                        true)
-                root.node.syncAndWait()
-                ossNode
+                        NodeSchemas.CLASS_OSS
+                    )
+                    root.node.syncAndWait()
+                    return ossNode
+                }
+                1 -> {
+                    return c[0]
+                }
+                else -> {
+                    System.err.println("more than one oss node: " + c)
+                    return c[0]
+                }
             }
         }
 
