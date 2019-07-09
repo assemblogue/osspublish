@@ -44,8 +44,8 @@ class Res {
 
 
 class Client {
-
     companion object {
+        val res = Res()
 
         fun unzipFile(file: File): Map<String, String> {
             return ZipFile(file).use { zip ->
@@ -110,7 +110,12 @@ class Client {
             }
         }
 
-        fun authenticateAndGetStorage(plr: PLR, plrId: String): Storage {
+        fun getPassphraseEntered(): String {
+            println(res.format("enter_passphrase"))
+            return readLine()!!
+        }
+
+        fun authenticateAndGetStorage(plr: PLR, plrId: String, passphrase: String?): Storage {
             val (storageType, userId) = try {
                 plrId.split(":", limit = 2).let{ a -> Pair(a[0], a[1])}
             } catch (e: IndexOutOfBoundsException) {
@@ -119,10 +124,15 @@ class Client {
             val storages = plr.listStorages().filter {
                 x -> x.typeName == storageType && x.userId == userId
             }
-            return if (storages.isNotEmpty()) {
-                plr.connectStorage(storages[0])
-            } else {
-                plr.newStorage(Storage.Type.byName(storageType))
+            try {
+                return if (storages.isNotEmpty()) {
+                    plr.connectStorage(storages[0])
+                } else {
+                    plr.newStorage(Storage.Type.byName(storageType))
+                }
+            } catch (e: PLR.StorageNeedPassphraseException) {
+                val p = passphrase ?: getPassphraseEntered()
+                return e.postPassphrase(p.toByteArray())
             }
         }
 
@@ -205,7 +215,6 @@ class Client {
 
         fun selectIdFromStorageList(plr: PLR): String {
             val list = plr.listStorages()
-            val res = Res()
             return if (list.isEmpty()) {
                 println(res.format("enter_new_id"))
                 readLine()!!
@@ -243,10 +252,10 @@ class Client {
                     mapOf("plr.oss.endpoint" to "https://osscon.herokuapp.com/convert")
             )
             val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
-            val res = Res()
+            val passphrase = props.getProperty("plr.passphrase")
 
             try {
-                val storage = authenticateAndGetStorage(plr, plrId)
+                val storage = authenticateAndGetStorage(plr, plrId, passphrase)
                 val root = plr.getPublicRoot(storage)
                 root.syncAndWait()
                 val ossNode = getPropOssOrCreate(root)
