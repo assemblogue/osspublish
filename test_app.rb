@@ -59,4 +59,16 @@ EOD
     assert_equal index['ontology'][0]['label']['ja'], '基本!'
     assert_equal index['ontology'][0]['label'][''], 'Base!'
   end
+  
+  def test_it_gives_stylesheet
+    unzipped = post_for_csv <<EOD
+"]O Base Base",
+"Event ja:事象;Event",
+"]G LivingTest S d
+en:Living Test"
+EOD
+
+    index = JSON.parse(unzipped['index.json'])
+    assert_equal index['channelSS'][0]['label']['en'], 'Living Test'
+  end
 end

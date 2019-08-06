@@ -3,6 +3,7 @@
  */
 import Client.Companion.generateOssId
 import Client.Companion.parseFileToUpload
+import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -29,6 +30,41 @@ class ClientTest {
                         "{\"foo\": 0}"),
                 f)
     }
+
+    @Test
+    fun testFilesToUpload() {
+        val ls = filesToUpload(ObjectMapper().readTree("""
+            {"ontology": [{
+              "file": "f1.jsonld",
+              "label": {
+                "": "Foo1",
+                "ja": "Bar2"
+              },
+              "format": "application/ld+json"
+            }], "channelSS": [{
+              "file": "f2.jsonld",
+              "label": {
+                "": "Foo3",
+                "ja": "Bar4"
+              },
+              "format": "application/ld+json"
+						}]}
+                """.trimIndent()), hashMapOf("f1.jsonld" to "{\"foo\": 0}", "f2.jsonld" to "bar"))
+
+				assertEquals(listOf(
+					FileToUpload(
+						"ontology",
+						hashMapOf("" to "Foo1", "ja" to "Bar2"),
+						"application/ld+json",
+						"{\"foo\": 0}"
+					),
+					FileToUpload(
+						"channelSS",
+						hashMapOf("" to "Foo3", "ja" to "Bar4"),
+						"application/ld+json",
+						"bar")).toSet(),
+					ls.toSet())
+		}
 
     @Test
     fun testSha256() {

@@ -70,7 +70,7 @@ class Client {
         }
 
         fun filesToUpload(node: JsonNode, fileEntries: Map<String, String>): List<FileToUpload> {
-            return  arrayOf("ontology", "restriction").flatMap { linkName ->
+            return NodeSchemas.PROP_OSS_CONTAINERS.flatMap { linkName ->
                 if (node.has(linkName)) {
                 node.get(linkName).let { n -> (0 until n.size()).map {
                     parseFileToUpload(linkName, n.get(it), fileEntries)
@@ -249,17 +249,19 @@ class Client {
             val plr = (PLR.createBuilder() as com.assemblogue.plr.lib.generic.PlrBuilder).build()!!
             val props = findConfigOrCreate(
                     File("config.properties"),
-                    mapOf("plr.oss.endpoint" to "https://osscon.herokuapp.com/convert")
+                    mapOf(
+                        "plr.oss.endpoint" to "https://osscon.herokuapp.com/convert",
+                        "verbose" to "false")
             )
             val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
             val passphrase = props.getProperty("plr.passphrase")
+            val verbose = props.getProperty("verbose").toBoolean()
 
             try {
                 val storage = authenticateAndGetStorage(plr, plrId, passphrase)
                 val root = plr.getPublicRoot(storage)
                 root.syncAndWait()
                 val ossNode = getPropOssOrCreate(root)
-                ossNode.syncAndWait()
                 
                 if (args.isNotEmpty()) {
                     args.forEach { arg ->
@@ -307,14 +309,18 @@ class Client {
                         }
                     }
                     ossNode.syncAndWait()
-                    listFilesInStorage(ossNode).forEach(::println)
+                    if (verbose) {
+                        listFilesInStorage(ossNode).forEach(::println)
+                    }
                 } else {
                     println(res.format("accessing_account", plrId))
-                    println(Instant.ofEpochMilli(ossNode.meta.lastModified()))
-                    ossNode.entry.sharingUsers.forEach {
-                        println(it)
-                    }
+                    if (verbose) {
+                        println(Instant.ofEpochMilli(ossNode.meta.lastModified()))
+                        ossNode.entry.sharingUsers.forEach {
+                            println(it)
+                        }
 
+                    }
                     println("-----")
                     listFilesInStorage(ossNode).forEach(::println)
                     println("-----")
