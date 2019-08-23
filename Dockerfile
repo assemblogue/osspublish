@@ -6,4 +6,4 @@ RUN cpanm --notest Text::CSV_XS JSON Encode
 RUN bundle config build.nokogiri --use-system-libraries
 RUN bundle install
 ENV PORT=${PORT}
-CMD ["bundle", "exec", "rackup"]
+CMD ["bundle", "exec", "rackup", "-E", "production"]

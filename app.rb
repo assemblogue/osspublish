@@ -1,11 +1,12 @@
 require 'sinatra'
-require 'sinatra/reloader' if development?
+require 'sinatra/reloader'
 require 'zip'
 require 'tempfile'
 require 'thwait'
 require 'logger'
 require 'roo'
 require 'securerandom'
+require 'pp'
 require './gen_com'
 
 def spreadsheet_to_csv(path, tmpdir)
@@ -63,11 +64,14 @@ class App < Sinatra::Base
     set :server, :puma
   end
 
-  configure :test do
+  configure do
+    register Sinatra::Reloader unless production?
   end
 
   get '/' do
-    erb :form
+    erb :form, locals: {
+          env: settings.environment
+        }
   end
 
   post '/convert' do
@@ -77,7 +81,7 @@ class App < Sinatra::Base
                logger = Logger.new(MultiIO.new(STDERR, File.open(logfile, 'a')))
                logger.level = Logger::DEBUG
                logger
-             elsif settings.environment == :test
+             elsif settings.environment == :development
                logger = Logger.new(logfile)
                logger.level = Logger::DEBUG
                logger
@@ -119,6 +123,12 @@ class App < Sinatra::Base
   end
 
   get '/env' do
-    ENV.inspect
+    content_type 'text/plain'
+    unless settings.environment == :production
+      """
+#{ENV.pretty_inspect}
+
+#{self.pretty_inspect}"""
+    end
   end
 end

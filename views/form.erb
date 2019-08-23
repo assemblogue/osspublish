@@ -1,16 +1,24 @@
-<html><!-- -*- nxml-mode -*- -->
-<form action="/convert" method="post" enctype="multipart/form-data">
- <div>
-   <label for="file">Choose file to upload</label>
-   <input type="file" id="file" name="file" multiple>
- </div>
- <div>
-   <button>Submit</button>
- </div>
-</form>
-
-<!--
-<%= Time.now %>
-
-<%= params.inspect %> -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>OSSCON<%= if env != :production then " (#{env})" end %></title>
+    <style type="text/css">
+      footer{ text-align: right; }
+    </style>
+  </head>
+  <body>
+    <form action="/convert" method="post" enctype="multipart/form-data">
+      <div>
+        <label for="file">Choose file to upload</label>
+        <input type="file" id="file" name="file" multiple>
+      </div>
+      <div>
+        <button>Submit</button>
+      </div>
+    </form>
+    <% if env != :production %>
+    <footer><a href="/env">→🚪</a></footer>
+    <% end %>
+  </body>
 </html>
