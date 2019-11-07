@@ -121,10 +121,10 @@ sub extract {
 sub checkReserveWord {
     my ($id) = @_;
 	# 予約語配列
-	my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel");
+	my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time");
 
 	foreach my $kwd (@rsvky) {
-		if ($id =~ /^$kwd([()<>!\s].*|\n|$)/) {
+		if ($id =~ /^$kwd([-+()<>!\s].*|\n|$)/) {
 			return $kwd;
 		}
 	}
@@ -691,7 +691,6 @@ sub parsePropertyParams {
 		/.*/;
 		
 		$params =~ s/^([-+=@|!()<>])([^-+=@|!()<>]+)//;
-
 		unless ($1) {
 			print STDERR "Error: Undetermined property type symbol `$params' " .
 				"on property `$id at line $lc\n";
@@ -726,18 +725,18 @@ sub parsePropertyParams {
 					$prop->{'defaultValue'} = JSON::false;
 				}
 			} elsif (($range eq "decimal") || ($range =~ /integer$/i)) {
-				$prop->{'defaultValue'} = $val + 0;
+				$prop->{'defaultValue'} = numValue($val);
 			} else {
 				$prop->{'defaultValue'} = $val;
 			}
 		} elsif ($sym eq "(") {
-			$prop->{'maxInclusive'} = $val + 0;
+			$prop->{'maxInclusive'} = numValue($val);
 		} elsif ($sym eq "<") {
-			$prop->{'maxExclusive'} = $val + 0;
+			$prop->{'maxExclusive'} = numValue($val);
 		} elsif ($sym eq ")") {
-			$prop->{'minInclusive'} = $val + 0;
+			$prop->{'minInclusive'} = numValue($val);
 		} elsif ($sym eq ">") {
-			$prop->{'minExclusive'} = $val + 0;
+			$prop->{'minExclusive'} = numValue($val);
 		}
     }
 
@@ -753,6 +752,12 @@ sub parsePropertyParams {
 	return $prop;
 }
 
+sub numValue {
+    my ($val) = @_;
+    $val =~ s/^\s*~/-/g;
+
+    return $val + 0;
+}
 
 sub outputOntology {
     my ($ontologyName, $prefix) = @_;
