@@ -564,7 +564,6 @@ sub parsePropertyIdParams {
 				$n = "cardinality";
 			} elsif ($1 eq ")") {
 				$n = "minCardinality";
-				next if (($num + 0) == 0);
 			} elsif ($1 eq ">") {
 				$n = "minCardinality";
 				$num++;
@@ -690,7 +689,7 @@ sub parsePropertyParams {
     while ($params) {
 		/.*/;
 		
-		$params =~ s/^([-+=@|!()<>])([^-+=@|!()<>]+)//;
+		$params =~ s/^([-+=@!()<>])([^-+=@!()<>]+)//;
 		unless ($1) {
 			print STDERR "Error: Undetermined property type symbol `$params' " .
 				"on property `$id at line $lc\n";
@@ -707,15 +706,22 @@ sub parsePropertyParams {
 		} elsif ($sym eq "@") {
 			# type.
 			$prop->{'@type'} = $val;
-		} elsif ($sym eq "|") {
-			# subPropertyOf.
-			$prop->{'subPropertyOf'} = [$val];
 		} elsif ($sym eq "+") {
+			# '|'で切り分ける
+    		my @la = split(/\|/, $val);
 			# trueLabel.
-			parseLabelLang($prop, $val, 'trueLabel');
+			parseLabelLang($prop, $la[0], 'trueLabel');
+			if( $#la > 0 ){
+				parseLabelLang($prop, $la[1], 'trueAbbrev');
+			}
 		} elsif ($sym eq "-") {
+			# '|'で切り分ける
+    		my @la = split(/\|/, $val);
 			# falseLabel.
-			parseLabelLang($prop, $val, 'falseLabel');
+			parseLabelLang($prop, $la[0], 'falseLabel');
+			if( $#la > 0 ){
+				parseLabelLang($prop, $la[1], 'falseAbbrev');
+			}
 		} elsif ($sym eq "!") {
 			# defaultValue.
 			if ($range eq "boolean") {
