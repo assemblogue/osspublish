@@ -5,6 +5,8 @@ require 'tempfile'
 require 'thwait'
 require 'logger'
 require 'roo'
+require 'digest'
+require 'open3'
 require 'securerandom'
 require 'pp'
 require './gen_com'
@@ -25,7 +27,11 @@ end
 def run_command_async(command, logger)
   Thread.new do
     logger.info("Running command: #{command}")
-    system(command)
+    stdout, stderr, status = Open3.capture3(command)
+    unless status.success?
+      logger.info("Stdout: #{stdout}")
+      logger.info("Stderr: #{stderr}")
+    end
     logger.info("Finishing: #{command}")
     yield if block_given?
   end
@@ -33,6 +39,7 @@ end
 
 def JSONize(files, tmpdir, logger)
   threads = files.map do |f|
+    logger.info("#{f.path}: #{f.size} bytes, #{Digest::MD5.hexdigest(f.read)}")
     base = File.join(tmpdir, File.basename(f, '.csv'))
     [run_command_async("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''", logger),
      run_command_async("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cts.pl #{base} ''", logger)]
