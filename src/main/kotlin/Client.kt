@@ -139,7 +139,7 @@ class Client {
 
 		fun generateOssId(linkName: String, labels: Map<String, String>, baseName: String, userId: String): String {
 			val key = arrayOf('"'+ linkName+'"',
-					labels.map{ (k, v) -> "[\"$k\", \"$v\"]"}
+					labels.filter{(k,_) -> k == "ja" || k == ""}.map{ (k, v) -> "[\"$k\", \"$v\"]"}
 			).joinToString(", ", "[", "]")
 			return "$userId#" + Hasher().sha256(key).substring(0..15) + "#${baseName}_$linkName"
 		}
@@ -149,6 +149,15 @@ class Client {
 		}
 		fun generateOssId(file: FileToUpload, userId: String): String {
 			return generateOssId(file.linkName, file.labels, file.id, userId)
+		}
+
+		fun normalizeOssId(s: String): String {
+			val m = Regex("(.*?)#(.*?)#(.*)").matchEntire(s)
+			return if (m != null) {
+				listOf(m.groups[1], m.groups[2]).map{it!!.value}.joinToString("#")
+			} else {
+				s
+			}
 		}
 
 		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
@@ -297,11 +306,11 @@ class Client {
 						val filesToUpload = filesToUpload(
 								ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
 						).associate { Pair(generateOssId(it, storage.userId), it) }
-						val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(generateOssId(x), x) }
+						val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }
 						filesToUpload.forEach { (id, file) ->
-							if (filesInStorage.contains(id)) {
+							if (filesInStorage.contains(normalizeOssId(id))) {
 								println(res.format("overwriting", file.labels, id))
-								filesInStorage.getValue(id).node.let { n ->
+								filesInStorage.getValue(normalizeOssId(id)).node.let { n ->
 									if (n.get().readBytes().contentEquals(file.content.toByteArray())) {
 										println(res.format("skipped_unchanged"))
 									} else {
