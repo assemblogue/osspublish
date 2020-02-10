@@ -8,4 +8,5 @@
   <entry key="overwriting_skipped">スキップしました</entry>
   <entry key="select_or_enter_new_id">[{0,number,integer}-{1,number,integer}]から選択するか新しいIDを入力してください...</entry>
   <entry key="skipped_unchanged">スキップしました（変更点なし）</entry>
+  <entry key="spreadsheet-not-retrieved">スプレッドシートを取得できませんでした: {0}</entry>
 </properties>

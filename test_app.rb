@@ -58,6 +58,7 @@ EOD
     index = JSON.parse(unzipped['index.json'])
     assert_equal index['ontology'][0]['label']['ja'], '基本!'
     assert_equal index['ontology'][0]['label'][''], 'Base!'
+    assert_equal index['ontology'][0]['id'], 'Base'
   end
   
   def test_it_gives_stylesheet
@@ -70,5 +71,65 @@ EOD
 
     index = JSON.parse(unzipped['index.json'])
     assert_equal index['channelSS'][0]['label']['en'], 'Living Test'
+  end
+
+  def test_parse_ontology
+    Tempfile.create(['tmp', '.jsonld']) do |f|
+      f.puts <<EOD
+{
+   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+   "@id" : "BaseOntology",
+   "@type" : "Ontology",
+   "defines" : [
+      {
+         "@id" : "#_none",
+         "@type" : "Class",
+         "comment" : {
+            "" : "autonomous",
+            "ja" : "自立"
+         },
+         "label" : {
+            "" : "none",
+            "ja" : "無"
+         }
+      }],
+   "label" : {
+      "" : "Base",
+      "ja" : "基本!"
+   }
+}
+EOD
+      f.flush
+
+      assert_equal ['ontology',  {""=>"Base", "ja"=>"基本!"}, 'BaseOntology'], get_link_and_label(f.path) {|link,labels,base| [link,labels,base]}
+    end
+  end
+  
+  def test_parse_restriction
+    Tempfile.create(['x', '_stylesheet_restriction.jsonld']) do |f|
+      f.puts <<EOD
+{
+   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+   "restriction" : {
+      "@id" : "DisclosureRequest",
+      "defines" : [
+         {
+            "#reply" : "h"
+         },
+         {
+            "#DisclosureConsent" : "h"
+         }
+      ],
+      "label" : {
+         "" : "Disclosure Request",
+         "ja" : "開示要請"
+      }
+   }
+}
+EOD
+      f.flush
+
+      assert_equal ['restriction',  {""=>"Disclosure Request", "ja"=>"開示要請"}, 'DisclosureRequest'], get_link_and_label(f.path) {|link,labels,base| [link,labels,base]}
+    end
   end
 end

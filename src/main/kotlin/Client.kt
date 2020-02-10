@@ -19,7 +19,7 @@ import java.util.*
 import java.util.zip.ZipFile
 import java.util.concurrent.TimeUnit
 
-data class FileToUpload (val linkName: String, val labels: Map<String, String>,
+data class FileToUpload (val linkName: String, val id: String, val labels: Map<String, String>,
                          val format:String="application/ld+json", val content:String="")
 
 data class FileInStorage (val linkName: String, val labels: Map<String, String>,
@@ -64,8 +64,9 @@ class Client {
         fun parseFileToUpload(linkName: String, node: JsonNode, fileEntries: Map<String, String>): FileToUpload {
             val format = node.get("format").asText()
             val file = node.get("file").asText()
+            val id = node.get("id").asText()
             val labels = parseLabels(node.get("label")!!)
-            return FileToUpload(linkName, labels, format,
+            return FileToUpload(linkName, id, labels, format,
                     fileEntries[file!!] ?: error("referencing non-existing file"))
         }
 
@@ -147,7 +148,7 @@ class Client {
             return file.node.peerEntity.getProperty(NodeSchemas.PROP_OSS_ID)[0].asLiteral().value.toString()
         }
         fun generateOssId(file: FileToUpload, userId: String): String {
-            return generateOssId(file.linkName, file.labels, file.labels[""]?:"", userId)
+            return generateOssId(file.linkName, file.labels, file.id, userId)
         }
 
         fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
@@ -274,7 +275,12 @@ class Client {
                                         .get()
                                         .build()
                                 val response = client.newCall(request).execute()
-                                val bytes =  response.body()!!.bytes()
+																val responseBody = response.body()
+																if ( responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+																	  println(res.format("spreadsheet-not-retrieved", arg))
+																		return
+																}
+                                val bytes = responseBody.bytes()
                                 convertUsingOnlineService(
                                         bytes,
                                         findOntologyName(bytes) + ".xlsx",

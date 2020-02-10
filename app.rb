@@ -108,11 +108,12 @@ class App < Sinatra::Base
           logger.info("Adding #{path}")
           zipfile.add(File.basename(path), path)
           zipfile.commit()
-          get_link_and_label(path) do |link, label|
+          get_link_and_label(path) do |link, label, base|
             index[link] ||= []
             index[link] << {
               'file' => File.basename(path),
               'label' => label,
+              'id' => base,
               'format' => 'application/ld+json'
             }
           end

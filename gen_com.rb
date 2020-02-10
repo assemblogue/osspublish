@@ -37,17 +37,25 @@ def get_link_and_label(path)
   link = map[suffix] if suffix
 
   lab = nil
+  base = nil
   File.open(path) do |f|
     json = JSON.load(f)
+    json.lookup_by_any_key(['@id']) do |v|
+      base = v
+    end
     json.each_pair do |_, v|
-      if v.is_a?(Hash) and v.key?('label')
-        lab = v['label']
+      if v.is_a?(Hash) and v.key?('label') and v.key?('@id')
+        lab ||= v['label']
+        base ||= v['@id']
         break
       end
     end
     json.lookup_by_any_key(['summary', 'questionnaire']) do |v|
       v.lookup_by_any_key(['channel', 'unit', 'questionnaire']) do |w|
-        lab = w['label'] if w.is_a?(Hash)
+        if w.is_a?(Hash)
+          lab ||= w['label']
+          base ||= w['@id']
+        end
       end
     end
     if not lab and json.key?('label') then
@@ -57,11 +65,11 @@ def get_link_and_label(path)
 
   ## TODO ['summary']['channel']['label'] questionnaire.questionnaire.label を認識
 
-  if not link or not lab then
+  if not link or not lab or not base then
     warn 'ERROR - SKIPPED ' + [path, link, lab].inspect
     return
   end
-  yield link, lab
+  yield link, lab, base
 end
 
 def my_basename(path)
