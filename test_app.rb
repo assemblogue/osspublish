@@ -7,6 +7,16 @@ require 'test/unit'
 require 'rack/test'
 require 'json'
 
+def unzip(str)
+  unzipped = {}
+  Zip::InputStream.open(StringIO.new(str)) do |io|
+    while (entry = io.get_next_entry)
+      unzipped[entry.name] = io.read
+    end
+  end
+  unzipped
+end
+
 # Unit tests for class App
 class AppTest < Test::Unit::TestCase
   include Rack::Test::Methods
@@ -21,16 +31,6 @@ class AppTest < Test::Unit::TestCase
     assert last_response.body.include? '<button>Submit</button>'
   end
 
-  def unzip(str)
-    unzipped = {}
-    Zip::InputStream.open(StringIO.new(str)) do |io|
-      while (entry = io.get_next_entry)
-        unzipped[entry.name] = io.read
-      end
-    end
-    unzipped
-  end
-
   def post_for_csv(content)
     Tempfile.create(['tmp', '.csv']) do |f|
       f.puts content
@@ -42,7 +42,7 @@ class AppTest < Test::Unit::TestCase
       unzip(last_response.body)
     end
   end
-  
+
   def test_it_gives_zipped_log
     unzipped = post_for_csv('foo,bar')
     assert_includes unzipped.keys, 'log.txt'
@@ -60,7 +60,7 @@ EOD
     assert_equal index['ontology'][0]['label'][''], 'Base!'
     assert_equal index['ontology'][0]['id'], 'Base'
   end
-  
+
   def test_it_gives_stylesheet
     unzipped = post_for_csv <<EOD
 "]O Base Base",
