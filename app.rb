@@ -46,6 +46,8 @@ def JSONize(files, tmpdir, logger)
   end.flatten
   ThreadsWait.all_waits(*threads)
 
+  logger.info("files created: #{Dir.glob("#{tmpdir}/*.jsonld").inspect}")
+
   Dir.glob("#{tmpdir}/*.jsonld")
     .reject { |f| f =~ /(Context|_stylesheet)\.jsonld$/ }
 end
