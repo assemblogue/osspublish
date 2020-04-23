@@ -116,7 +116,7 @@ class Client {
 			return readLine()!!
 		}
 
-		fun authenticateAndGetStorage(plr: PLR, plrId: String, passphrase: String?): Storage {
+		fun authenticateAndGetStorage(plr: PLR, plrId: String, passphrase: String?): Storage? {
 			val (storageType, userId) = try {
 				plrId.split(":", limit = 2).let{ a -> Pair(a[0], a[1])}
 			} catch (e: IndexOutOfBoundsException) {
@@ -187,9 +187,9 @@ class Client {
 			return filesInStorage(ossNode).asSequence().map { file ->
 				val (ver, date) = file.node.entry.let {
 					try {
-						Pair(it.listRevisions().size, Instant.ofEpochMilli(it.meta.lastModified()))
+						Pair(it.listRevisions().size, Instant.ofEpochMilli(it.getMeta()?.lastModified() ?: 0L))
 					} catch (e: com.assemblogue.plr.io.EntryNotFoundException) {
-						Pair(-1, Instant.ofEpochMilli(0))
+						Pair(-1, Instant.ofEpochMilli(0L))
 					}
 				}
 				"${file.linkName} v$ver $date ${generateOssId(file)} ${file.labels}"
@@ -256,7 +256,7 @@ class Client {
 
 		@JvmStatic
 		fun main(args: Array<String>) {
-			val plr = (PLR.createBuilder() as com.assemblogue.plr.lib.generic.PlrBuilder).build()!!
+			val plr = PLR.createBuilder<PLR.Builder>().build()
 			val props = findConfigOrCreate(
 					File("config.properties"),
 					mapOf(
@@ -268,7 +268,7 @@ class Client {
 			val verbose = props.getProperty("verbose").toBoolean()
 
 			try {
-				val storage = authenticateAndGetStorage(plr, plrId, passphrase)
+				val storage = authenticateAndGetStorage(plr, plrId, passphrase)!!
 				val root = plr.getPublicRoot(storage)
 				root.syncAndWait()
 				val ossNode = getPropOssOrCreate(root)
@@ -331,7 +331,7 @@ class Client {
 					println(res.format("accessing_account", plrId))
 					if (verbose) {
 						println(Instant.ofEpochMilli(ossNode.meta.lastModified()))
-						ossNode.entry.sharingUsers.forEach {
+						ossNode.entry.getSharingUsers().forEach {
 							println(it)
 						}
 

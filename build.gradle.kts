@@ -1,6 +1,7 @@
 plugins {
-	kotlin("jvm") version "1.3.50"
 	application
+	kotlin("jvm") version "1.3.50"
+
 	id("com.github.johnrengelman.shadow") version "4.0.4"
 }
 
@@ -20,13 +21,13 @@ application {
 }
 
 dependencies {
-	implementation(files("${projectDir}/libs/plr2_util.jar"))
+	//compileOnly(files("${projectDir}/libs/plr2_util.jar"))
 	implementation(kotlin("stdlib-jdk8"))
 	implementation("com.fasterxml.jackson.core:jackson-databind:2.9.8")
 	implementation("com.squareup.okhttp3:okhttp:3.14.1")
 	implementation("org.apache.poi:poi:4.1.0")
 	implementation("org.apache.poi:poi-ooxml:4.1.0")
-  implementation("com.assemblogue.plr:lib-generic:2.2.+")
+	implementation("com.assemblogue.plr:lib-generic:2.2.+")
 	testImplementation("org.junit.jupiter:junit-jupiter-api:5.4.2")
 	testRuntime("org.junit.jupiter:junit-jupiter-engine:5.4.2")
 }
