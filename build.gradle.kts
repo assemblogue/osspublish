@@ -1,13 +1,14 @@
+
 plugins {
 	application
-	kotlin("jvm") version "1.3.50"
+	kotlin("jvm") version "1.4.10"
 
 	id("com.github.johnrengelman.shadow") version "4.0.4"
 }
 
 repositories {
 	jcenter()
-	maven(url = "https://www.assemblogue.com/repo/")
+	maven(url = "https://www.assemblogue.com/m2repository/")
 }
 
 java {
