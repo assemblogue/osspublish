@@ -1,4 +1,4 @@
-FROM ruby:2.5
+FROM ruby:2.7
 COPY . /usr/src/myapp
 WORKDIR /usr/src/myapp
 RUN curl -L http://cpanmin.us | perl - App::cpanminus

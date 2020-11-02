@@ -10,10 +10,12 @@ require 'digest'
 
 # 新規アップロードのみをサポートしています
 
+# add methods to Hash
 class Hash
-  def lookup_by_any_key(ls)
-    ls.each do |x|
-      if self.key?(x)
+  # return self[list[0]] || self[list[1] || ....
+  def lookup_by_any_key(list)
+    list.each do |x|
+      if key?(x)
         yield self[x]
         break
       end
@@ -26,10 +28,11 @@ def get_link_and_label(path)
     '_stylesheet_restriction' => 'restriction',
     '_stylesheet_constraint' => 'constraint',
     '_stylesheet_unitsummary' => 'unitTimeSS',
-    '_stylesheet_channelsummary' => 'channelSS',
+    '_stylesheet_groupsummary' => 'channelSS',
     '_stylesheet_chronologicalsummary' => 'chronologicalSS',
+    '_stylesheet_singlechannelsummary' => 'singleChannelSS',
     '_stylesheet_questionnaire' => 'questionnaire',
-    '_stylesheet_timeline' => 'timelineSS',
+    '_stylesheet_timeline' => 'timelineSS'
   }
 
   link = 'ontology'
@@ -39,33 +42,33 @@ def get_link_and_label(path)
   lab = nil
   base = nil
   File.open(path) do |f|
-    json = JSON.load(f)
+    json = JSON.parse(f.read)
     json.lookup_by_any_key(['@id']) do |v|
       base = v
     end
     json.each_pair do |_, v|
-      if v.is_a?(Hash) and v.key?('label') and v.key?('@id')
+      if v.is_a?(Hash) && v.key?('label') && v.key?('@id')
         lab ||= v['label']
         base ||= v['@id']
         break
       end
     end
-    json.lookup_by_any_key(['summary', 'questionnaire']) do |v|
-      v.lookup_by_any_key(['channel', 'unit', 'questionnaire']) do |w|
+    json.lookup_by_any_key(%w[summary questionnaire]) do |v|
+      v.lookup_by_any_key(%w[channel unit single questionnaire]) do |w|
         if w.is_a?(Hash)
           lab ||= w['label']
           base ||= w['@id']
         end
       end
     end
-    if not lab and json.key?('label') then
+    if !lab && json.key?('label')
       lab = json['label']
     end
   end
 
-  ## TODO ['summary']['channel']['label'] questionnaire.questionnaire.label を認識
+  ## TODO capture ['summary']['channel']['label'] questionnaire.questionnaire.label
 
-  if not link or not lab or not base then
+  if !link || !lab || !base
     warn 'ERROR - SKIPPED ' + [path, link, lab].inspect
     return
   end

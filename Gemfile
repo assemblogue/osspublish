@@ -6,3 +6,4 @@ gem 'rubyzip'
 gem 'sinatra'
 gem 'sinatra-contrib'
 gem 'test-unit', group: :test
+gem 'thwait' if RUBY_VERSION >= '2.7'

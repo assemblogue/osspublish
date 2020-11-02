@@ -35,9 +35,13 @@ my %map_t;
 my @types_u, @types_hv;
 my %map_smmry;
 
-# Channel Summary
+# group Summary
 my @types_g;
 my %map_g;
+
+# channel summary
+my @types_s;
+my %map_s;
 
 # questionaire
 my @types_q, @types_qc, @types_ql;
@@ -87,24 +91,32 @@ sub extract {
 	my $idx = 0;
 	my $pre = "";
 	my $exec = 0;
+	my $comment = 0;
 
     foreach $_ (@_) {
 		if (($g_submode eq "constraint") && ($clmn < $g_n_clmn)) {
 			# 空セルに意味がある場合がある。
 		}
 		else {
-			next unless ($_);
+			unless ($_) {
+				if ($g_mode eq "S") {
+					# チャネルサマリの場合は空の列もカウントする
+					$clmn++;
+				}
+				next;
+			}
 		}
 
 		$g_autoIndex++;
 
 		if (/^\\.*/) {
 			#コメントカラム
+			$comment++;
 		}
 		else {
 			$exec++;
 
-			if (/^[<\]][ORCTUHVGQL](,*)?/) {
+			if (/^[<\]][ORCTUHVGQLS](,*)?/) {
 				#Mode 先頭カラムでしか出現しないので、本来、カラム毎にチェックは不要
 				my ($kw, $id, $label) = split(/[, \s]+/, $_, 3);
 				$g_blk = changeMode($kw, $id, $label);
@@ -143,15 +155,24 @@ sub extract {
 				unitSummary($g_blk, $g_lc-1, $clmn, $_);
 			}
 			elsif ($g_mode eq "G") {
-				# チャネルサマリ
+				# グループサマリ
 				$pre = channelSummary($pre, $g_blk, $g_lc-1, $clmn, $_);
+			}
+			elsif ($g_mode eq "S") {
+				# チャネルサマリ
+				singleChannelSummary($g_blk, $g_lc-1, $clmn, $_);
 			}
 		}
 		$clmn++;
 	}
 
 	if ($exec == 0) {
-		return 0;
+		if ($g_mode eq "S" && $comment == 0 ) {
+			return 1;
+		}
+		else {
+			return 0;
+		}
 	}
 
 	return 1;
@@ -390,6 +411,68 @@ sub unitSummary {
 		my $rr = $blk->{'defines'};
 		unless ($rr) {
 			#  新規作成：Jacksonの都合、１個でも[ ]で囲む。
+			$blk->{'defines'} = [ $us_item ];
+		} else {
+			push(@$rr, $us_item);
+		}
+    }
+}
+
+# チャネルサマリ
+sub singleChannelSummary {
+    my ($blk, $line, $column, $params) = @_;
+
+    /.*/;
+	# 改行を削除
+	$params =~ s/\n//;
+
+	#先頭のホワイトスペース削除
+	$params =~ s/^(\s+)//;
+
+	# 格納場所を確保
+	$idx = $g_sm_idx;
+	$us_item = $map_smmry{$idx};
+	$g_sm_idx++;
+
+    if ($blk) {
+		# '|'で切り分ける
+		my ($style, $format, @scopes) = split(/\|/, $params);
+
+		# scopeはそのまま格納する
+		# 配列も文字列として扱われてしまうので@scopeは[]で囲む
+		$us_item = {
+			"line"       => "$line",
+			"column"     => "$column",
+			"constraint" => [@scopes],
+		};
+		
+		parseLabelLang($us_item, $format, "format");
+		unless ($us_item->{'format'}) {
+			$us_item->{'format'} = {};
+		}
+
+		# styleは中身までパースする
+		if ( $style =~ /([nb]|[LBG])([LRTB])?([0-9](em)?)?(\s([a-z]+))?/) {
+			$us_item->{'rule'}  = $1;
+			$align = $2;
+			$width = $3;
+			$color = $6;  # $4には(em)、$5は( ([a-z]+)?)が入る
+			if( $align ) {
+				$us_item->{'align'} = $align;
+			}
+			if( $width ) {
+				$us_item->{'width'} = $width;
+			}
+			if( $color ) {
+				$us_item->{'color'} = $color;
+			}
+		}
+
+		$map_smmry{$idx} = $us_item;
+
+		my $rr = $blk->{'defines'};
+		unless ($rr) {
+			# 配列も文字列として扱われてしまうので[]で囲む
 			$blk->{'defines'} = [ $us_item ];
 		} else {
 			push(@$rr, $us_item);
@@ -744,7 +827,7 @@ sub changeMode {
     my ($kws, $id, $params) = @_;
 
 	my $kw = $kws;
-	$kws =~ s/^([<\]][ORCTUHVGQL])//;
+	$kws =~ s/^([<\]][ORCTUHVGQLS])//;
 	$kw = $1;
 
 	# 旧仕様(先頭'<')対策
@@ -782,8 +865,13 @@ sub changeMode {
         $g_submode = "";
 	}
 	elsif ($kw eq ']G') {
-		#  チャネルサマリ
+		#  グループサマリ
 		$g_mode = "G";
+        $g_submode = "";
+	}
+	elsif ($kw eq ']S') {
+		#  チャネルサマリ
+		$g_mode = "S";
         $g_submode = "";
 	}
     # submode
@@ -834,6 +922,10 @@ sub changeMode {
 	elsif ($g_mode eq "G") {
 		$typ = \@types_g;
 		$map = \%map_g;
+	}
+	elsif ($g_mode eq "S") {
+		$typ = \@types_s;
+		$map = \%map_smmry;
 	}
 	elsif ($g_mode eq "Q") {
 		unless ($g_submode) {
@@ -909,7 +1001,25 @@ sub changeMode {
 			if ($label) {
 				parseLabel($blk, $label);
 			}
+			
+			if( $g_mode eq 'H' || $g_mode eq 'V' ){
+				$blk->{'direction'} = $g_mode;
+			}
 		}	
+		elsif ($g_mode eq 'S') {
+			# [? ID label Period
+			$params =~ /^(.+)\s([^\s]+)$/;
+			my $label  = $1;
+			my $period = $2;
+
+			if ($period) {
+				$blk->{'period'} = $period;
+			}
+
+			if ($label) {
+				parseLabel($blk, $label);
+			}
+		}
 		else {
 			# <? ID (label)
 			if ($params) {
@@ -1026,6 +1136,9 @@ sub outputOntology {
 	if (@types_g) {
 		$sm->{'channel'} = \@types_g;
 	}
+	if (@types_s) {
+		$sm->{'single'} = \@types_s;
+	}
 
 	my $oj = {
 		'@context' => $context
@@ -1097,7 +1210,7 @@ sub outputOntology {
 			'@context' => $context
 		};
 		my $sm = {
-			'channel' => $types_u[$i]
+			'unit' => $types_u[$i]
 		};
 		$obj->{'summary'} = $sm;
 		print F encode_utf8($json->encode($obj));
@@ -1112,7 +1225,22 @@ sub outputOntology {
 			'@context' => $context
 		};
 		my $sm = {
-			'channel' => $types_hv[$i]
+			'chronological' => $types_hv[$i]
+		};
+		$obj->{'summary'} = $sm;
+		print F encode_utf8($json->encode($obj));
+		close(F);
+	}
+
+	#group summary 出力
+	$count =  @types_g;
+	for ($i = 0; $i < $count; $i++) {
+		open(F, ">$ontologyName" . "_stylesheet_groupsummary" . $i . ".jsonld");
+		my $obj = {
+			'@context' => $context
+		};
+		my $sm = {
+			'channel' => $types_g[$i]
 		};
 		$obj->{'summary'} = $sm;
 		print F encode_utf8($json->encode($obj));
@@ -1120,14 +1248,14 @@ sub outputOntology {
 	}
 
 	#channel summary 出力
-	$count =  @types_g;
+	$count =  @types_s;
 	for ($i = 0; $i < $count; $i++) {
-		open(F, ">$ontologyName" . "_stylesheet_channelsummary" . $i . ".jsonld");
+		open(F, ">$ontologyName" . "_stylesheet_singlechannelsummary" . $i . ".jsonld");
 		my $obj = {
 			'@context' => $context
 		};
 		my $sm = {
-			'channel' => $types_g[$i]
+			'single' => $types_s[$i]
 		};
 		$obj->{'summary'} = $sm;
 		print F encode_utf8($json->encode($obj));

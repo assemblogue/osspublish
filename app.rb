@@ -47,7 +47,7 @@ def JSONize(files, tmpdir, logger)
   ThreadsWait.all_waits(*threads)
 
   Dir.glob("#{tmpdir}/*.jsonld")
-    .reject { |f| f =~ /(Context|_stylesheet)\.jsonld$/ }
+     .reject { |f| f =~ /(Context|_stylesheet)\.jsonld$/ }
 end
 
 # proxy IO for multiple IOs
@@ -58,6 +58,10 @@ class MultiIO
 
   def write(*args)
     @targets.each { |t| t.write(*args) }
+  end
+
+  def flush
+    @targets.each(&:flush)
   end
 
   def close
@@ -84,19 +88,18 @@ class App < Sinatra::Base
   post '/convert' do
     logfile = Tempfile.create(['log', '.txt']).path
     puts "Running #{settings.environment}, logging in #{logfile}"
-    logger = if settings.environment == :test
-               logger = Logger.new(MultiIO.new(STDERR, File.open(logfile, 'a')))
-               logger.level = Logger::DEBUG
-               logger
-             elsif settings.environment == :development
-               logger = Logger.new(logfile)
-               logger.level = Logger::DEBUG
-               logger
-             else
-               logger = Logger.new(logfile)
-               logger.level = Logger::INFO
-               logger
-             end
+    logfile_io = if settings.environment == :test
+                   MultiIO.new(STDERR, File.open(logfile, 'a'))
+                 else
+                   File.open(logfile, 'w')
+                 end
+    logger = Logger.new(logfile_io).tap do |x|
+      x.level = if settings.environment == :production
+                  Logger::INFO
+                else
+                  Logger::DEBUG
+                end
+    end
 
     files = request.env['rack.tempfiles']
     zip = Tempfile.create(['converted', '.zip']).path
@@ -107,20 +110,25 @@ class App < Sinatra::Base
         JSONize(files, tmpdir, logger).each do |path|
           logger.info("Adding #{path}")
           zipfile.add(File.basename(path), path)
-          zipfile.commit()
+          zipfile.commit
           get_link_and_label(path) do |link, label, base|
-            index[link] ||= []
-            index[link] << {
-              'file' => File.basename(path),
-              'label' => label,
-              'id' => base,
-              'format' => 'application/ld+json'
-            }
+            if base == ''
+              logger.info("Not adding #{path}")
+            else
+              index[link] ||= []
+              index[link] << {
+                'file' => File.basename(path),
+                'label' => label,
+                'id' => base,
+                'format' => 'application/ld+json'
+              }
+            end
           end
         end
         Tempfile.create('tmp') do |f|
           f.puts index.to_json
           f.flush
+          logfile_io.flush
           zipfile.add('index.json', f)
           zipfile.add('log.txt', logfile)
           zipfile.commit

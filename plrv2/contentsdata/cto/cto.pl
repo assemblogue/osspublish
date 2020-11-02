@@ -191,7 +191,7 @@ sub parseClass {
     my ($idParams, $label, $pcls) = @_;
 
     /.*/;
-    $idParams =~ s/^(\w+)//;
+    $idParams =~ s/^([\w\.\-]+)//;
     my $id = "#$1";
 
 	# 既登録済みか？
@@ -689,7 +689,13 @@ sub parsePropertyParams {
     while ($params) {
 		/.*/;
 		
-		$params =~ s/^([-+=@!()<>])([^-+=@!()<>]+)//;
+		my $delim = "=@!()<>";
+		if( $range eq "boolean" ){
+			$delim = "-+" . $delim;
+		}
+		
+		$params =~ s/^([${delim}])([^${delim}]+)//;
+		
 		unless ($1) {
 			print STDERR "Error: Undetermined property type symbol `$params' " .
 				"on property `$id at line $lc\n";
@@ -792,7 +798,7 @@ sub outputOntology {
 	my $oj = {
 		'@context' => "http://PUBLIC/ontologies/menuContext.jsonld",
 		'@id' => "$idname",
-		'@type' => 'Ontology',
+		'@type' => 'PlrOntology',
    		'label' => \%$label,
 		'defines' => \@types,
 	};

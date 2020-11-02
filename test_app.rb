@@ -50,86 +50,115 @@ class AppTest < Test::Unit::TestCase
   end
 
   def test_it_gives_zipped_jsonld
-    unzipped = post_for_csv <<EOD
-"]O Base ja:基本!;Base!",
-"Event ja:事象;Event","begin=1 ja:開始;begin","dateTime"
-EOD
+    unzipped = post_for_csv(
+      <<~CSV
+        "]O Base ja:基本!;Base!",
+        "Event ja:事象;Event","begin=1 ja:開始;begin","dateTime"
+      CSV
+    )
 
     index = JSON.parse(unzipped['index.json'])
-    assert_equal index['ontology'][0]['label']['ja'], '基本!'
-    assert_equal index['ontology'][0]['label'][''], 'Base!'
-    assert_equal index['ontology'][0]['id'], 'Base'
+    assert_equal ['ontology'], index.keys
+    assert_equal '基本!', index['ontology'][0]['label']['ja']
+    assert_equal 'Base!', index['ontology'][0]['label']['']
+    assert_equal 'Base', index['ontology'][0]['id']
+  end
+
+  def test_it_gives_log
+    unzipped = post_for_csv('')
+    assert_equal [], JSON.parse(unzipped['index.json']).keys
+    assert_not_equal '', unzipped['log.txt']
   end
 
   def test_it_gives_stylesheet
-    unzipped = post_for_csv <<EOD
-"]O Base Base",
-"Event ja:事象;Event",
-"]G LivingTest S d
-en:Living Test"
-EOD
+    unzipped = post_for_csv(
+      <<~CSV
+        "]O Base Base",
+        "Event ja:事象;Event",
+        "]G LivingTest S d
+        en:Living Test"
+      CSV
+    )
 
     index = JSON.parse(unzipped['index.json'])
-    assert_equal index['channelSS'][0]['label']['en'], 'Living Test'
+
+    assert_equal 'Living Test', index['channelSS'][0]['label']['en']
   end
 
-  def test_parse_ontology
+  def test_empty_ontology_nonempty_stylesheet_single
+    unzipped = post_for_csv(
+      <<~CSV
+        "]S TempearturePlate ja:温度板;Temperature Plate 14d",
+        "n","","b|[]|H14dd"
+        "L blue|ja:体温;Body Temperature","","G|[%BodyTemperature%bodyTempVal]"
+      CSV
+    )
+
+    index = JSON.parse(unzipped['index.json'])
+
+    assert_equal ['singleChannelSS'], index.keys
+    assert_equal 'Temperature Plate', index['singleChannelSS'][0]['label']['']
+  end
+
+  def test_parse_ontology_link_label
     Tempfile.create(['tmp', '.jsonld']) do |f|
-      f.puts <<EOD
-{
-   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
-   "@id" : "BaseOntology",
-   "@type" : "Ontology",
-   "defines" : [
-      {
-         "@id" : "#_none",
-         "@type" : "Class",
-         "comment" : {
-            "" : "autonomous",
-            "ja" : "自立"
-         },
-         "label" : {
-            "" : "none",
-            "ja" : "無"
-         }
-      }],
-   "label" : {
-      "" : "Base",
-      "ja" : "基本!"
-   }
-}
-EOD
+      f.puts <<~JSON
+        {
+           "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+           "@id" : "BaseOntology",
+           "@type" : "PlrOntology",
+           "defines" : [
+              {
+                 "@id" : "#_none",
+                 "@type" : "Class",
+                 "comment" : {
+                    "" : "autonomous",
+                    "ja" : "自立"
+                 },
+                 "label" : {
+                    "" : "none",
+                    "ja" : "無"
+                 }
+              }],
+           "label" : {
+              "" : "Base",
+              "ja" : "基本!"
+           }
+        }
+      JSON
       f.flush
 
-      assert_equal ['ontology',  {""=>"Base", "ja"=>"基本!"}, 'BaseOntology'], get_link_and_label(f.path) {|link,labels,base| [link,labels,base]}
+      assert_equal ['ontology', { '' => 'Base', 'ja' => '基本!' }, 'BaseOntology'],
+                   get_link_and_label(f.path) { |link, labels, base| [link, labels, base] }
     end
   end
-  
+
   def test_parse_restriction
     Tempfile.create(['x', '_stylesheet_restriction.jsonld']) do |f|
-      f.puts <<EOD
-{
-   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
-   "restriction" : {
-      "@id" : "DisclosureRequest",
-      "defines" : [
-         {
-            "#reply" : "h"
-         },
-         {
-            "#DisclosureConsent" : "h"
-         }
-      ],
-      "label" : {
-         "" : "Disclosure Request",
-         "ja" : "開示要請"
-      }
-   }
-}
-EOD
+      f.puts <<~JSON
+        {
+           "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+           "restriction" : {
+              "@id" : "DisclosureRequest",
+              "defines" : [
+                 {
+                    "#reply" : "h"
+                 },
+                 {
+                    "#DisclosureConsent" : "h"
+                 }
+              ],
+              "label" : {
+                 "" : "Disclosure Request",
+                 "ja" : "開示要請"
+              }
+           }
+        }
+      JSON
       f.flush
 
-      assert_equal ['restriction',  {""=>"Disclosure Request", "ja"=>"開示要請"}, 'DisclosureRequest'], get_link_and_label(f.path) {|link,labels,base| [link,labels,base]}
+      assert_equal ['restriction', { '' => 'Disclosure Request', 'ja' => '開示要請' }, 'DisclosureRequest'],
+                   get_link_and_label(f.path) { |link, labels, base| [link, labels, base] }
     end
   end
 end
