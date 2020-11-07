@@ -9,4 +9,5 @@
   <entry key="select_or_enter_new_id">select from [{0,number,integer}-{1,number,integer}] or enter a new ID: </entry>
   <entry key="skipped_unchanged">Skipped - no change detected</entry>
   <entry key="spreadsheet-not-retrieved">Spreadsheet not retrieved: {0}</entry>
+  <entry key="file-not-supported">File not supported: {0}</entry>
 </properties>

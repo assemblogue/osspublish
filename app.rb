@@ -102,6 +102,7 @@ class App < Sinatra::Base
     end
 
     files = request.env['rack.tempfiles']
+    logger.debug(request.env.inspect)
     zip = Tempfile.create(['converted', '.zip']).path
     logger.info("Reading #{files.inspect}")
     Dir.mktmpdir do |tmpdir|
@@ -113,7 +114,7 @@ class App < Sinatra::Base
           zipfile.commit
           get_link_and_label(path) do |link, label, base|
             if base == ''
-              logger.info("Not adding #{path}")
+              logger.warn("Not linking #{path}")
             else
               index[link] ||= []
               index[link] << {

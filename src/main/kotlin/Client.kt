@@ -36,7 +36,9 @@ class Hasher {
 class Res {
 	private val formatter = MessageFormat("")
 	fun format(messageId: String, vararg args: Any): String {
-		formatter.applyPattern(ResourceBundle.getBundle("messages", XMLResourceBundleControl()).getString(messageId))
+		formatter.applyPattern(
+			ResourceBundle.getBundle("messages", XMLResourceBundleControl())
+				.getString(messageId))
 		return formatter.format(args)
 	}
 }
@@ -217,7 +219,7 @@ class Client {
 		}
 
 		private fun putNewFileToStorage(ossNode: EntityNode, file: FileToUpload, id: String) {
-			val fileNode = ossNode.newFile(file.linkName, file.format,true)
+			val fileNode = ossNode.newFile(file.linkName, file.format, true)
 			fileNode.put(file.content.toByteArray())
 			fileNode.titleValueMap = file.labels
 			fileNode.peerEntity.newLiteral(NodeSchemas.PROP_OSS_ID).value = id
@@ -284,24 +286,28 @@ class Client {
 										.get()
 										.build()
 								val response = client.newCall(request).execute()
-																val responseBody = response.body()
-																if ( responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
-																	  println(res.format("spreadsheet-not-retrieved", arg))
-																		return
-																}
+								val responseBody = response.body()
+								if ( responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+									println(res.format("spreadsheet-not-retrieved", arg))
+									return
+								}
 								val bytes = responseBody.bytes()
 								convertUsingOnlineService(
-										bytes,
-										findOntologyName(bytes) + ".xlsx",
-										URL(props.getProperty("plr.oss.endpoint"))
+									bytes,
+									findOntologyName(bytes) + ".xlsx",
+									URL(props.getProperty("plr.oss.endpoint"))
 								)
 							}
-							arg.endsWith(".xlsx") -> convertUsingOnlineService(
-									File(arg).readBytes(),
-									File(arg).name,
-									URL(props.getProperty("plr.oss.endpoint"))
+							arg.endsWith(".xlsx") || arg.endsWith(".csv") -> convertUsingOnlineService(
+								File(arg).readBytes(),
+								File(arg).name,
+								URL(props.getProperty("plr.oss.endpoint"))
 							)
-							else -> unzipFile(File(arg))
+							arg.endsWith(".zip") -> unzipFile(File(arg))
+							else -> {
+								println(res.format("file-not-supported", arg))
+								kotlin.system.exitProcess(1)
+							}
 						}
 						val filesToUpload = filesToUpload(
 								ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
