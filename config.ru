@@ -1,7 +1,9 @@
 require './app'
-if not ENV['PORT'] then
-  STDERR.puts 'PORT is not set'
-  exit 1
-else
-  Rack::Handler.default.run(App, :Port => ENV['PORT'])
-end
+# unless ENV['PORT']
+#   warn 'PORT is not set'
+#   Rack::Handler.default.run(App)
+# else
+#   Rack::Handler.default.run(App, Port: ENV['PORT'])
+# end
+
+run App

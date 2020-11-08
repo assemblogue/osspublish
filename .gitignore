@@ -1,4 +1,3 @@
-*.lock
 .gradle
 .idea
 build/
