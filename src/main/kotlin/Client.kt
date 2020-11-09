@@ -258,6 +258,7 @@ class Client {
 
 		@JvmStatic
 		fun main(args: Array<String>) {
+			var returnCode = 0
 			val plr = PLR.createBuilder<PLR.Builder>().build()
 			val props = findConfigOrCreate(
 					File("config.properties"),
@@ -289,7 +290,7 @@ class Client {
 								val responseBody = response.body()
 								if ( responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
 									println(res.format("spreadsheet-not-retrieved", arg))
-									return
+									throw java.io.IOException("Spreadsheet not retrieved: " + arg)
 								}
 								val bytes = responseBody.bytes()
 								convertUsingOnlineService(
@@ -306,7 +307,7 @@ class Client {
 							arg.endsWith(".zip") -> unzipFile(File(arg))
 							else -> {
 								println(res.format("file-not-supported", arg))
-								kotlin.system.exitProcess(1)
+								throw java.io.IOException("File not supported: " + arg)
 							}
 						}
 						val filesToUpload = filesToUpload(
@@ -346,10 +347,13 @@ class Client {
 					listFilesInStorage(ossNode).forEach(::println)
 					println("-----")
 				}
+			} catch (e: Exception) {
+				e.printStackTrace()
+				returnCode = 1
 			} finally {
 				plr.destroy()
+				kotlin.system.exitProcess(returnCode)
 			}
 		}
-
 	}
 }
