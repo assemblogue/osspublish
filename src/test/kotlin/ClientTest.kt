@@ -5,7 +5,13 @@ import Client.Companion.parseFileToUpload
 import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
 import Client.Companion.normalizeOssId
+import Client.Companion.convertUsingOnlineService
 import com.fasterxml.jackson.databind.ObjectMapper
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okio.Buffer
+import okio.Okio
+import okio.source
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -112,5 +118,17 @@ class ClientTest {
 		assertEquals(
 			"https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/export",
 			findExportUrl("https://docs.google.com/spreadsheets/d/1xxxx_1xxxx/edit?usp=drive_web"))
+	}
+
+	@Test
+	fun `parses an empty zip and get empty results`() {
+		val buffer = Buffer()
+		buffer.writeAll(this.javaClass.classLoader.getResource("test_empty.zip").openStream().source())
+		val server = MockWebServer()
+		server.enqueue(MockResponse().setBody(buffer))
+		server.start()
+		val entries = convertUsingOnlineService("".toByteArray(), "testData", server.url("/convert/").toUrl())
+		assertEquals("{}", entries["index.json"]!!.trim())
+		server.shutdown()
 	}
 }

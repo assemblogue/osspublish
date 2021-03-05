@@ -6,7 +6,12 @@ import com.assemblogue.plr.lib.model.PublicRoot
 import com.assemblogue.plr.util.NodeSchemas
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import kotlin.io.path.ExperimentalPathApi
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileReader
@@ -19,11 +24,13 @@ import java.util.*
 import java.util.zip.ZipFile
 import java.util.concurrent.TimeUnit
 
-data class FileToUpload (val linkName: String, val id: String, val labels: Map<String, String>,
-						 val format:String="application/ld+json", val content:String="")
+data class FileToUpload (
+	val linkName: String, val id: String, val labels: Map<String, String>,
+	val format:String="application/ld+json", val content:String="")
 
-data class FileInStorage (val linkName: String, val labels: Map<String, String>,
-						  val format:String, val node: FileNode)
+data class FileInStorage (
+	val linkName: String, val labels: Map<String, String>,
+	val format:String, val node: FileNode)
 
 class Hasher {
 	private val md = MessageDigest.getInstance("SHA-256")
@@ -162,6 +169,7 @@ class Client {
 			}
 		}
 
+		@OptIn(ExperimentalPathApi::class)
 		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
 			val client = OkHttpClient.Builder()
 					.connectTimeout(60000L, TimeUnit.MILLISECONDS)
@@ -171,15 +179,15 @@ class Client {
 			val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
 					.addFormDataPart(
 						"file", name,
-						RequestBody.create(MediaType.parse("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), content))
+						content.toRequestBody("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".toMediaType()))
 					.build()
 			val request = Request.Builder()
 					.url(endpoint)
 					.post(requestBody)
 					.build()
 			val response = client.newCall(request).execute()
-			val bytes = response.body()!!.bytes()
-			val file = createTempFile("oss", ".zip")
+			val bytes = response.body!!.bytes()
+			val file = kotlin.io.path.createTempFile("oss", ".zip").toFile()
 			file.writeBytes(bytes)
 			System.err.println("temp file: $file")
 			return unzipFile(file)
@@ -287,7 +295,7 @@ class Client {
 										.get()
 										.build()
 								val response = client.newCall(request).execute()
-								val responseBody = response.body()
+								val responseBody = response.body
 								if ( responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
 									println(res.format("spreadsheet-not-retrieved", arg))
 									throw java.io.IOException("Spreadsheet not retrieved: " + arg)
