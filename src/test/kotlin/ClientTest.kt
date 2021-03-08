@@ -1,18 +1,19 @@
 // -*- coding: utf-8 -*-
 
-import Client.Companion.generateOssId
-import Client.Companion.parseFileToUpload
+import Client.Companion.convertUsingOnlineService
 import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
+import Client.Companion.generateOssId
 import Client.Companion.normalizeOssId
-import Client.Companion.convertUsingOnlineService
+import Client.Companion.parseFileToUpload
+import Client.Companion.unzipInputStream
 import com.fasterxml.jackson.databind.ObjectMapper
-import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okio.Buffer
-import okio.Okio
 import okio.source
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class ClientTest {
@@ -88,8 +89,8 @@ class ClientTest {
 	@Test
 	fun `generate ossId from ja and default labels`() {
 		assertEquals(
-				"plr@assemblogue.com#bebf864fe47cca82#Base_ontology",
-				generateOssId("ontology", hashMapOf("" to "Base!", "ja" to "基本!"), "Base", "plr@assemblogue.com"))
+			"plr@assemblogue.com#bebf864fe47cca82#Base_ontology",
+			generateOssId("ontology", hashMapOf("" to "Base!", "ja" to "基本!"), "Base", "plr@assemblogue.com"))
 	}
 
 	@Test
@@ -102,8 +103,8 @@ class ClientTest {
 	@Test
 	fun `normalize ossId`() {
 		assertEquals(
-				"plr@assemblogue.com#bebf864fe47cca82",
-				normalizeOssId("plr@assemblogue.com#bebf864fe47cca82#Base_ontology"))
+			"plr@assemblogue.com#bebf864fe47cca82",
+			normalizeOssId("plr@assemblogue.com#bebf864fe47cca82#Base_ontology"))
 	}
 
 	@Test
@@ -121,9 +122,19 @@ class ClientTest {
 	}
 
 	@Test
-	fun `parses an empty zip and get empty results`() {
+	fun `open a dummy zip and ensure the stream is closed after`() {
+		this.javaClass.classLoader.getResource("test_dummy.zip")!!.openStream().use { stream ->
+		  assertEquals("{}", unzipInputStream(stream)["index.json"]!!.trim())
+			assertThrows(java.io.IOException::class.java) {
+				stream.available()
+			}
+		}
+	}
+
+	@Test
+	fun `parses a dummy zip and get an empty index`() {
 		val buffer = Buffer()
-		buffer.writeAll(this.javaClass.classLoader.getResource("test_empty.zip").openStream().source())
+		buffer.writeAll(this.javaClass.classLoader.getResource("test_dummy.zip")!!.openStream().source())
 		val server = MockWebServer()
 		server.enqueue(MockResponse().setBody(buffer))
 		server.start()

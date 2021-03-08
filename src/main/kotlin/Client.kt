@@ -14,23 +14,32 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import kotlin.io.path.ExperimentalPathApi
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
-import java.io.FileReader
-import java.io.FileWriter
+import java.io.InputStream
 import java.net.URL
 import java.security.MessageDigest
 import java.text.MessageFormat
 import java.time.Instant
-import java.util.*
+import java.util.ResourceBundle
+import java.util.Properties
 import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipEntry
 import java.util.concurrent.TimeUnit
 
-data class FileToUpload (
-	val linkName: String, val id: String, val labels: Map<String, String>,
-	val format:String="application/ld+json", val content:String="")
+data class FileToUpload(
+	val linkName: String,
+	val id: String,
+	val labels: Map<String, String>,
+	val format: String = "application/ld+json",
+	val content: String = ""
+)
 
-data class FileInStorage (
-	val linkName: String, val labels: Map<String, String>,
-	val format:String, val node: FileNode)
+data class FileInStorage(
+	val linkName: String,
+	val labels: Map<String, String>,
+	val format: String,
+	val node: FileNode
+)
 
 class Hasher {
 	private val md = MessageDigest.getInstance("SHA-256")
@@ -45,12 +54,11 @@ class Res {
 	fun format(messageId: String, vararg args: Any): String {
 		formatter.applyPattern(
 			ResourceBundle.getBundle("messages", XMLResourceBundleControl())
-				.getString(messageId))
+				.getString(messageId)
+		)
 		return formatter.format(args)
 	}
 }
-
-
 
 class Client {
 	companion object {
@@ -66,6 +74,29 @@ class Client {
 			}
 		}
 
+		fun unzipEntries(zis: ZipInputStream): Sequence<ZipEntry> {
+			return sequence {
+				var entry = zis.getNextEntry()
+				while (entry != null) {
+					yield(entry)
+					zis.closeEntry()
+					entry = zis.getNextEntry()
+				}
+				zis.closeEntry()
+			}
+		}
+
+		fun unzipInputStream(inputStream: InputStream): Map<String, String> {
+			return ZipInputStream(inputStream).use { zis ->
+				unzipEntries(zis).associate {
+					ByteArray(it.size.toInt()).let { bytes ->
+						zis.read(bytes)
+						Pair(it.name!!, bytes.toString(Charsets.UTF_8))
+					}
+				}
+			}
+		}
+
 		fun parseLabels(node: JsonNode): Map<String, String> {
 			return node.fields().asSequence().associate{ Pair(it.key, it.value.asText())}
 		}
@@ -75,14 +106,15 @@ class Client {
 			val file = node.get("file").asText()
 			val id = node.get("id").asText()
 			val labels = parseLabels(node.get("label")!!)
-			return FileToUpload(linkName, id, labels, format,
-					fileEntries[file!!] ?: error("referencing non-existing file"))
+			return FileToUpload(
+				linkName, id, labels, format,
+				fileEntries[file!!] ?: error("referencing non-existing file"))
 		}
 
 		fun filesToUpload(node: JsonNode, fileEntries: Map<String, String>): List<FileToUpload> {
 			return NodeSchemas.PROP_OSS_CONTAINERS.flatMap { linkName ->
 				if (node.has(linkName)) {
-				node.get(linkName).let { n -> (0 until n.size()).map {
+					node.get(linkName).let { n -> (0 until n.size()).map {
 					parseFileToUpload(linkName, n.get(it), fileEntries)
 				} } } else {
 					listOf()
@@ -105,7 +137,7 @@ class Client {
 					return c[0]
 				}
 				else -> {
-					System.err.println("more than one oss node: " + c)
+					System.err.println("more than one oss node: $c")
 					return c[0]
 				}
 			}
@@ -134,21 +166,22 @@ class Client {
 			val storages = plr.listStorages().filter {
 				x -> x.typeName == storageType && x.userId == userId
 			}
-			try {
-				return if (storages.isNotEmpty()) {
+			return try {
+				if (storages.isNotEmpty()) {
 					plr.connectStorage(storages[0])
 				} else {
 					plr.newStorage(Storage.Type.byName(storageType))
 				}
 			} catch (e: PLR.StorageNeedPassphraseException) {
 				val p = passphrase ?: getPassphraseEntered()
-				return e.postPassphrase(p.toByteArray())
+				e.postPassphrase(p.toByteArray())
 			}
 		}
 
 		fun generateOssId(linkName: String, labels: Map<String, String>, baseName: String, userId: String): String {
-			val key = arrayOf('"'+ linkName+'"',
-					labels.filter{(k,_) -> k == "ja" || k == ""}.map{ (k, v) -> "[\"$k\", \"$v\"]"}
+			val key = arrayOf(
+				"\"$linkName\"",
+				labels.filter{(k,_) -> k == "ja" || k == ""}.map{ (k, v) -> "[\"$k\", \"$v\"]"}
 			).joinToString(", ", "[", "]")
 			return "$userId#" + Hasher().sha256(key).substring(0..15) + "#${baseName}_$linkName"
 		}
@@ -172,25 +205,21 @@ class Client {
 		@OptIn(ExperimentalPathApi::class)
 		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
 			val client = OkHttpClient.Builder()
-					.connectTimeout(60000L, TimeUnit.MILLISECONDS)
-					.callTimeout(60000L, TimeUnit.MILLISECONDS)
-					.readTimeout(60000L, TimeUnit.MILLISECONDS)
-					.build()
+				.connectTimeout(60000L, TimeUnit.MILLISECONDS)
+				.callTimeout(60000L, TimeUnit.MILLISECONDS)
+				.readTimeout(60000L, TimeUnit.MILLISECONDS)
+				.build()
 			val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-					.addFormDataPart(
-						"file", name,
-						content.toRequestBody("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".toMediaType()))
-					.build()
+				.addFormDataPart(
+					"file", name,
+					content.toRequestBody("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".toMediaType()))
+				.build()
 			val request = Request.Builder()
-					.url(endpoint)
-					.post(requestBody)
-					.build()
+				.url(endpoint)
+				.post(requestBody)
+				.build()
 			val response = client.newCall(request).execute()
-			val bytes = response.body!!.bytes()
-			val file = kotlin.io.path.createTempFile("oss", ".zip").toFile()
-			file.writeBytes(bytes)
-			System.err.println("temp file: $file")
-			return unzipFile(file)
+			return unzipInputStream(response.body!!.byteStream())
 		}
 
 		fun listFilesInStorage(ossNode: EntityNode): Sequence<String> {
@@ -209,7 +238,7 @@ class Client {
 		fun findConfigOrCreate(file: File, defaults: Map<String, String>): Properties {
 			return if (file.exists()) {
 				Properties().also{ props ->
-					props.load(FileReader(file))
+					props.load(file.reader())
 					defaults.forEach{ (k, v) ->
 						if (props.getProperty(k) == null) {
 							props.setProperty(k, v)
@@ -221,7 +250,7 @@ class Client {
 					defaults.forEach{ (k, v) ->
 						props.setProperty(k, v)
 					}
-					props.store(FileWriter(file), "Configuration for $Client")
+					props.store(file.writer(), "Configuration for $Client")
 				}
 			}
 		}
@@ -242,7 +271,7 @@ class Client {
 				list.forEachIndexed { index, s ->
 					println("[$index] ${s.typeName}:${s.userId}")
 				}
-				println(res.format("select_or_enter_new_id", 0, list.size-1))
+				println(res.format("select_or_enter_new_id", 0, list.size - 1))
 				val line = readLine()!!
 				try {
 					val sel = line.toInt()
@@ -269,10 +298,10 @@ class Client {
 			var returnCode = 0
 			val plr = PLR.createBuilder<PLR.Builder>().build()
 			val props = findConfigOrCreate(
-					File("config.properties"),
-					mapOf(
-						"plr.oss.endpoint" to "https://osscon.herokuapp.com/convert",
-						"verbose" to "false")
+				File("config.properties"),
+				mapOf(
+					"plr.oss.endpoint" to "https://osscon.herokuapp.com/convert",
+					"verbose" to "false")
 			)
 			val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
 			val passphrase = props.getProperty("plr.passphrase")
@@ -291,12 +320,12 @@ class Client {
 								val client = OkHttpClient()
 
 								val request = Request.Builder()
-										.url(findExportUrl(arg))
-										.get()
-										.build()
+									.url(findExportUrl(arg))
+									.get()
+									.build()
 								val response = client.newCall(request).execute()
 								val responseBody = response.body
-								if ( responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+								if (responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
 									println(res.format("spreadsheet-not-retrieved", arg))
 									throw java.io.IOException("Spreadsheet not retrieved: " + arg)
 								}
@@ -318,8 +347,11 @@ class Client {
 								throw java.io.IOException("File not supported: " + arg)
 							}
 						}
+					  if (fileEntries["index.json"] == null) {
+							println("index.json is missing: ${fileEntries.keys}")
+						}
 						val filesToUpload = filesToUpload(
-								ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
+							ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
 						).associate { Pair(generateOssId(it, storage.userId), it) }
 						val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }
 						filesToUpload.forEach { (id, file) ->
@@ -349,7 +381,6 @@ class Client {
 						ossNode.entry.getSharingUsers().forEach {
 							println(it)
 						}
-
 					}
 					println("-----")
 					listFilesInStorage(ossNode).forEach(::println)

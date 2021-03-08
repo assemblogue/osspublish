@@ -11,8 +11,8 @@ repositories {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
+	sourceCompatibility = JavaVersion.VERSION_1_8
+	targetCompatibility = JavaVersion.VERSION_1_8
 }
 
 application {
@@ -21,7 +21,7 @@ application {
 }
 
 dependencies {
-	compileOnly(files("${projectDir}/libs/plr2_util.jar"))
+	compileOnly(files("$projectDir/libs/plr2_util.jar"))
 	implementation(kotlin("stdlib-jdk8"))
 	implementation("com.fasterxml.jackson.core:jackson-databind:2.9.8")
 	implementation("com.squareup.okhttp3:okhttp:4.9.0")
