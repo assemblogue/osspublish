@@ -3,6 +3,7 @@ import com.assemblogue.plr.lib.EntityNode
 import com.assemblogue.plr.lib.FileNode
 import com.assemblogue.plr.lib.PLR
 import com.assemblogue.plr.lib.model.PublicRoot
+import com.assemblogue.plr.lib.searchNodeFiles
 import com.assemblogue.plr.util.NodeSchemas
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -12,6 +13,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import kotlin.io.path.ExperimentalPathApi
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.InputStream
@@ -143,11 +146,11 @@ class Client {
 			}
 		}
 
-		fun filesInStorage(node: EntityNode): List<FileInStorage> {
-			return NodeSchemas.PROP_OSS_CONTAINERS.flatMap { linkName ->
+		fun filesInStorage(node: EntityNode): Flow<FileInStorage> = flow {
+			NodeSchemas.PROP_OSS_CONTAINERS.flatMap { linkName ->
 				node.getProperty(linkName).map{it.asFile()}.map { fn ->
 					val labels = fn.titleValueMap.map{ (k, v) -> (k!! to v!! as String)}.toMap()
-					FileInStorage(linkName, labels, fn.format, fn)
+					emit(FileInStorage(linkName, labels, fn.format, fn))
 				}
 			}
 		}
@@ -222,18 +225,20 @@ class Client {
 			return unzipInputStream(response.body!!.byteStream())
 		}
 
-		fun listFilesInStorage(ossNode: EntityNode): Sequence<String> {
-			return filesInStorage(ossNode).asSequence().map { file ->
-				val (ver, date) = file.node.entry.let {
+		@OptIn(ExperimentalCoroutinesApi::class)
+		fun listFilesInStorage(ossNode: EntityNode): Flow<String> = channelFlow {
+			filesInStorage(ossNode).flowOn(Dispatchers.IO).collect { file -> launch {
+				file.node.entry.let {
 					try {
 						Pair(it.listRevisions().size, Instant.ofEpochMilli(it.getMeta()?.lastModified() ?: 0L))
 					} catch (e: com.assemblogue.plr.io.EntryNotFoundException) {
 						Pair(-1, Instant.ofEpochMilli(0L))
 					}
+				}.let { (ver, date) ->
+					send("${file.linkName} v$ver $date ${generateOssId(file)} ${file.labels}")
 				}
-				"${file.linkName} v$ver $date ${generateOssId(file)} ${file.labels}"
-			}
-		}
+			} }
+		}.flowOn(Dispatchers.Default)
 
 		fun findConfigOrCreate(file: File, defaults: Map<String, String>): Properties {
 			return if (file.exists()) {
@@ -294,7 +299,7 @@ class Client {
 		}
 
 		@JvmStatic
-		fun main(args: Array<String>) {
+		fun main(args: Array<String>) = runBlocking {
 			var returnCode = 0
 			val plr = PLR.createBuilder<PLR.Builder>().build()
 			val props = findConfigOrCreate(
@@ -310,6 +315,7 @@ class Client {
 			try {
 				val storage = authenticateAndGetStorage(plr, plrId, passphrase)!!
 				val root = plr.getPublicRoot(storage)
+				storage.searchNodeFiles()
 				root.syncAndWait()
 				val ossNode = getPropOssOrCreate(root)
 
@@ -353,7 +359,7 @@ class Client {
 						val filesToUpload = filesToUpload(
 							ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
 						).associate { Pair(generateOssId(it, storage.userId), it) }
-						val filesInStorage = filesInStorage(ossNode).associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }
+						val filesInStorage = filesInStorage(ossNode).toList().associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }
 						filesToUpload.forEach { (id, file) ->
 							if (filesInStorage.contains(normalizeOssId(id))) {
 								println(res.format("overwriting", file.labels, id))
@@ -372,7 +378,7 @@ class Client {
 					}
 					ossNode.syncAndWait()
 					if (verbose) {
-						listFilesInStorage(ossNode).forEach(::println)
+						listFilesInStorage(ossNode).collect(::println)
 					}
 				} else {
 					println(res.format("accessing_account", plrId))
@@ -383,7 +389,7 @@ class Client {
 						}
 					}
 					println("-----")
-					listFilesInStorage(ossNode).forEach(::println)
+					listFilesInStorage(ossNode).collect(::println)
 					println("-----")
 				}
 			} catch (e: Exception) {

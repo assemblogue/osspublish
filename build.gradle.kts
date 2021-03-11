@@ -23,6 +23,7 @@ application {
 dependencies {
 	compileOnly(files("$projectDir/libs/plr2_util.jar"))
 	implementation(kotlin("stdlib-jdk8"))
+	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.3")
 	implementation("com.fasterxml.jackson.core:jackson-databind:2.9.8")
 	implementation("com.squareup.okhttp3:okhttp:4.9.0")
 	implementation("org.apache.poi:poi:4.1.0")
