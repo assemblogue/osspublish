@@ -44,6 +44,8 @@ data class FileInStorage(
 	val node: FileNode
 )
 
+class ClientException(s: String) : RuntimeException(s) {}
+
 class Hasher {
 	private val md = MessageDigest.getInstance("SHA-256")
 	fun sha256(str: String): String {
@@ -260,6 +262,21 @@ class Client {
 			}
 		}
 
+		fun hasEmptyContent(file: FileToUpload): Boolean {
+			if (file.content.isEmpty()) {
+				return true
+			}
+			if (file.linkName == "ontology") {
+				val tree = readJsonTreeFromString(file.content)
+				return tree.get("defines").elements().asSequence().toList().isEmpty()
+			}
+			if (file.linkName == "restriction") {
+				val tree = readJsonTreeFromString(file.content)
+				return tree.get("restriction").get("defines").elements().asSequence().toList().isEmpty()
+			}
+			return false
+		}
+		
 		private fun putNewFileToStorage(ossNode: EntityNode, file: FileToUpload, id: String) {
 			val fileNode = ossNode.newFile(file.linkName, file.format, true)
 			fileNode.put(file.content.toByteArray())
@@ -298,6 +315,8 @@ class Client {
 			return text.split(Regex("\\s"), 3)[1]
 		}
 
+		fun readJsonTreeFromString(s: String) = ObjectMapper().readTree(s)
+
 		@JvmStatic
 		fun main(args: Array<String>) = runBlocking {
 			var returnCode = 0
@@ -333,7 +352,7 @@ class Client {
 								val responseBody = response.body
 								if (responseBody == null || responseBody.contentType().toString() != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
 									println(res.format("spreadsheet-not-retrieved", arg))
-									throw java.io.IOException("Spreadsheet not retrieved: " + arg)
+									throw ClientException("Spreadsheet not retrieved: " + arg)
 								}
 								val bytes = responseBody.bytes()
 								convertUsingOnlineService(
@@ -350,16 +369,22 @@ class Client {
 							arg.endsWith(".zip") -> unzipFile(File(arg))
 							else -> {
 								println(res.format("file-not-supported", arg))
-								throw java.io.IOException("File not supported: " + arg)
+								throw ClientException("File not supported: " + arg)
 							}
 						}
 					  if (fileEntries["index.json"] == null) {
-							println("index.json is missing: ${fileEntries.keys}")
+							throw ClientException("index.json is missing: ${fileEntries.keys}")
 						}
 						val filesToUpload = filesToUpload(
-							ObjectMapper().readTree(fileEntries["index.json"] as String), fileEntries
+							readJsonTreeFromString(fileEntries["index.json"]!!), fileEntries
 						).associate { Pair(generateOssId(it, storage.userId), it) }
 						val filesInStorage = filesInStorage(ossNode).toList().associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }
+						if (filesToUpload.isEmpty()) {
+							throw ClientException("No file found")
+						}
+						if (filesToUpload.all{ (_, file) -> hasEmptyContent(file) }) {
+							println(res.format("empty-content", filesToUpload))
+						}
 						filesToUpload.forEach { (id, file) ->
 							if (filesInStorage.contains(normalizeOssId(id))) {
 								println(res.format("overwriting", file.labels, id))

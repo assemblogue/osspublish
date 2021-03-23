@@ -6,6 +6,7 @@ import Client.Companion.findExportUrl
 import Client.Companion.generateOssId
 import Client.Companion.normalizeOssId
 import Client.Companion.parseFileToUpload
+import Client.Companion.hasEmptyContent
 import Client.Companion.unzipInputStream
 import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.mockwebserver.MockResponse
@@ -13,6 +14,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okio.Buffer
 import okio.source
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
@@ -84,6 +86,70 @@ class ClientTest {
 		assertEquals(
 			"c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2",
 			Hasher().sha256("foobar"))
+	}
+
+	@Test
+	fun `0 byte is empty`() {
+		assert(hasEmptyContent(FileToUpload("ontology", "foo_bar", mapOf(), content="")))
+	}
+
+	@Test
+	fun `ontology with no definition is empty`() {
+		assert(hasEmptyContent(FileToUpload("ontology", "foo_bar", mapOf(), content="""
+{
+   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+   "@id" : "",
+   "@type" : "PlrOntology",
+   "defines" : [],
+   "label" : {}
+}
+""")))
+	}
+
+	@Test
+	fun `ontology with definition is not empty`() {
+		assertFalse(hasEmptyContent(FileToUpload("ontology", "foo_bar", mapOf(), content="""
+{
+   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+   "@id" : "",
+   "@type" : "PlrOntology",
+   "defines" : [{
+    "@id": "Node",
+    "@type": "Class",
+    "subClassOf": [
+      "Resource",
+      "owl:Thing",
+      "schema:Thing"
+    ],
+
+    "label": {
+      "": "Node",
+      "ja": "ノード"
+    }
+  }],
+   "label" : {}
+}
+""")))
+	}
+
+	@Test
+	fun `stylesheet with no restriction is empty`() {
+		assert(hasEmptyContent(FileToUpload("restriction", "foo_bar", mapOf(), content="""
+{
+   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+   "restriction" : {
+      "@id" : "Foo",
+      "defines" : []
+   }
+}
+""")))
+	}
+
+	@Test
+	fun `ill-formatted stylesheet raises exception`() {
+		assertThrows(com.fasterxml.jackson.core.JsonParseException::class.java) {
+			hasEmptyContent(FileToUpload("restriction", "foo_bar", mapOf(), content="{{"))
+		}
 	}
 
 	@Test
