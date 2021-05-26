@@ -145,7 +145,7 @@ sub extract {
 				elsif ($g_submode eq "constraint") {
 					questionConstraint($g_blk, $clmn, $_);
 				}
-				elsif ($g_submode eq "layout") {	
+				elsif ($g_submode eq "layout") {
 					questionLayout($g_blk, $_);
 				}
 			}
@@ -371,7 +371,7 @@ sub unitSummary {
 	$g_sm_idx++;
 
     if ($blk) {
-		
+
 		# 改行を廃し、'|'で切り分ける
 		my @prm_list = split(/\|/, $params);
 
@@ -445,7 +445,7 @@ sub singleChannelSummary {
 			"column"     => "$column",
 			"constraint" => [@scopes],
 		};
-		
+
 		parseLabelLang($us_item, $format, "format");
 		unless ($us_item->{'format'}) {
 			$us_item->{'format'} = {};
@@ -947,7 +947,7 @@ sub changeMode {
 		$id = "AutoID_" . $g_autoIndex;
 		$g_autoIndex++;
 	}
-	
+
 	# 重複チェック
 	my $blk = $map->{"$id"};
 	if ($blk) {
@@ -985,7 +985,7 @@ sub changeMode {
 			if ($label) {
 				parseLabel($blk, $label);
 			}
-		}	
+		}
 		elsif ($g_mode eq 'U' || $g_mode eq 'H' || $g_mode eq 'V' || $g_mode eq 'G') {
 			# [? ID S/R Period label
 			my ($subject, $period, $label) = split(/[ \s]+/, $params, 3);
@@ -1001,11 +1001,11 @@ sub changeMode {
 			if ($label) {
 				parseLabel($blk, $label);
 			}
-			
+
 			if( $g_mode eq 'H' || $g_mode eq 'V' ){
 				$blk->{'direction'} = $g_mode;
 			}
-		}	
+		}
 		elsif ($g_mode eq 'S') {
 			# [? ID label Period
 			$params =~ /^(.+)\s([^\s]+)$/;
@@ -1118,7 +1118,7 @@ sub outputOntology {
 			$qst->{'constraint'} = \@types_qc;
 		}
 	}
-	
+
 	my $tl = "";
 	if (@types_t) {
 		$tl = {
@@ -1161,11 +1161,11 @@ sub outputOntology {
     print F encode_utf8($json->encode($oj));
     close(F);
 
-	
+
 	# 分割出力 -------
 	my $count;
 	my $i;
-	
+
 	#constraint 出力
 	$count =  @types_oc;
 	for ($i = 0; $i < $count; $i++) {

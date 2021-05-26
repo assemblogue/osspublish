@@ -15,14 +15,14 @@ die("usage: cto.pl ontologyName prefix")
 
 #
 # typeMap 生成済みクラス・プロパティを保存　最終出力はこれ
-#  OMapブロック管理用
+# OMapブロック管理用
 #
 my @types, %typeMap, @OMap;
 my $mode;
 
 
 # 自動生成クラスのナンバー
-#　もともとが１行単位の処理なので、他行との関連をたどるのが甚だ困難
+# もともとが１行単位の処理なので、他行との関連をたどるのが甚だ困難
 my $autoClassCount = 0;
 
 MAIN: {
@@ -47,6 +47,36 @@ sub parseInput {
 		extract(@$fields);
     }
 }
+
+
+# 予約語のチェック
+# 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
+sub checkReservedWord {
+    # 予約語配列
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time");
+
+    return checkWord(\@rsvky, $_);
+}
+
+# 予約クラスのチェック
+# 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
+sub checkReservedClass {
+    # 予約クラス
+    my @rsvcls = ("Channel", "DataSetting");
+
+    return checkWord(\@rsvcls, $_);
+}
+
+sub checkWord {
+    my ($kwds, $id) = @_;
+	foreach my $kwd (@$kwds) {
+		if ($id =~ /^$kwd([-+()<>!\s].*|\n|$)/) {
+			return $kwd;
+		}
+	}
+	return "";
+}
+
 
 #
 # カラムごとの処理
@@ -77,11 +107,16 @@ sub extract {
 		}
 		elsif ($mode eq "O") {
 			# オントロジー定義のみ扱う
+			if (checkReservedClass($_)) {
+				my ($id) = split(/[ \n]+/, $_, 2);
+				# range 一個前のプロパティに設定する
+				parsePropertyParams($id, $prop, "ObjectProperty");
+			}
 			#if (/^_?[A-Z]/) {
-			if (/^_?[A-Z]/ || /^_[a-z]/) {
+			elsif (/^_?[A-Z]/ || /^_[a-z]/) {
 				# Class
 				my ($id, $label) = split(/[ \n]+/, $_, 2);
-				
+
 				$cls = parseClass($id, $label, $pcls);
 				$pcls = $cls;
 
@@ -94,10 +129,10 @@ sub extract {
 			} elsif (/^[a-z]/) {
 				# Property
 				my ($id, $label) = split(/[ \n]+/, $_, 2);
- 
-				if (checkReserveWord($id)) {
+
+				if (checkReservedWord($id)) {
 					# range 一個前のプロパティに設定する
-					$ptop = parsePropertyParams($id, $prop);
+					parsePropertyParams($id, $prop);
 				}
 				else {
 					# ここは直近のクラス$clsを引数にする
@@ -114,22 +149,6 @@ sub extract {
 			# print Dumper %typeMap;
 		}
     }
-}
-
-# 予約語のチェック
-# 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
-sub checkReserveWord {
-    my ($id) = @_;
-	# 予約語配列
-	my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time");
-
-	foreach my $kwd (@rsvky) {
-		if ($id =~ /^$kwd([-+()<>!\s].*|\n|$)/) {
-			return $kwd;
-		}
-	}
-
-	return "";
 }
 
 
@@ -206,7 +225,7 @@ sub parseClass {
 		$typeMap{$id} = $cls;
 		push(@types, $cls);
     }
-	
+
 	parseClassIdParams($cls, $id, $idParams);
 	parseLabel($cls, $label);
 
@@ -278,7 +297,7 @@ sub parseProperty {
     $propType =~ s/^([a-zA-Z0-9_]+)//;
     $id = "#$1";
     $propType =~ s/^@//;
-	
+
     my $prop = $typeMap{$id};
     if ($prop) {
 		#　既に登録済のプロパティ名
@@ -335,7 +354,7 @@ sub parseProperty {
 
 		## $typeMap{$id} = $prop;
 
- 		return $prop;
+		return $prop;
     }
 
     $prop = {
@@ -359,7 +378,7 @@ sub parseProperty {
     if ($propType) {
 		$prop->{'@type'} = $propType;
 	}
-	
+
     unless ($prop->{'@type'}) {
 		$prop->{'@type'} = "Property";
     }
@@ -481,7 +500,7 @@ sub parseLabelLang {
 	}
 
 	if (%ll) {
-	 	$type->{$propName} = \%ll;
+		$type->{$propName} = \%ll;
 	}
 }
 
@@ -529,12 +548,12 @@ sub parsePropertyIdParams {
     );
 
 	$DB::single = 1;
-	
+
     while ($idParams) {
 		/.*/;
 		$idParams =~ s/^([!*\/=()<>])([\d\w]*)//;
         # $1:記号　$2:値 数字か文字（[0-9][a-z][A-Z])
-		
+
 		unless ($1) {
 			print STDERR
 				"Error: Undetermined restriction symbol `$idParams' " .
@@ -615,13 +634,13 @@ sub setRangeClass {
 	if ($c_range) {
 		#range設定あり
 
-		if (checkReserveWord($c_range)) {
+		if (checkReservedWord($c_range)) {
 			# 既にデータタイプとして設定されている場合
 			print STDERR "Warning: Property $prop_id is DatatypeProperty that already have a range.\n";
 			return;
 		}
-				
- 		if ($c_range eq "#$cls_id") {
+
+		if ($c_range eq "#$cls_id") {
 			# 同名クラスが値域となっているなら、何もしなくてよい。
 			return;
 		}
@@ -663,7 +682,7 @@ sub setRangeClass {
 		}
 		else {
 			# 非選択肢クラスが設定されている。
- 			print STDERR "Warning: Property $prop_id is DatatypeProperty that already have a range(Class).\n";
+			print STDERR "Warning: Property $prop_id is DatatypeProperty that already have a range(Class).\n";
 			return;
 		}
 	}
@@ -675,7 +694,7 @@ sub setRangeClass {
 
 #　値域のセット
 sub parsePropertyParams {
-    my ($params, $prop) = @_;
+    my ($params, $prop, $type) = @_;
 
     my ($range, $params1) = split(/[-+=@|!()<>]/, $params, 2);
     $params = $_;
@@ -688,14 +707,14 @@ sub parsePropertyParams {
 
     while ($params) {
 		/.*/;
-		
+
 		my $delim = "=@!()<>";
 		if( $range eq "boolean" ){
 			$delim = "-+" . $delim;
 		}
-		
+
 		$params =~ s/^([${delim}])([^${delim}]+)//;
-		
+
 		unless ($1) {
 			print STDERR "Error: Undetermined property type symbol `$params' " .
 				"on property `$id at line $lc\n";
@@ -714,7 +733,7 @@ sub parsePropertyParams {
 			$prop->{'@type'} = $val;
 		} elsif ($sym eq "+") {
 			# '|'で切り分ける
-    		my @la = split(/\|/, $val);
+		my @la = split(/\|/, $val);
 			# trueLabel.
 			parseLabelLang($prop, $la[0], 'trueLabel');
 			if( $#la > 0 ){
@@ -722,7 +741,7 @@ sub parsePropertyParams {
 			}
 		} elsif ($sym eq "-") {
 			# '|'で切り分ける
-    		my @la = split(/\|/, $val);
+		my @la = split(/\|/, $val);
 			# falseLabel.
 			parseLabelLang($prop, $la[0], 'falseLabel');
 			if( $#la > 0 ){
@@ -752,11 +771,11 @@ sub parsePropertyParams {
 		}
     }
 
-    # 特に設定されていないなら
-    my $ptp = $prop->{'@type'};
-    unless ($ptp) {
-        $prop->{'@type'} = "DatatypeProperty";
-    }
+    ## 特に設定されていないなら
+    #my $ptp = $prop->{'@type'};
+    #unless ($ptp) {
+	$prop->{'@type'} = $type || "DatatypeProperty";
+    #}
 
 	## my $prop_id = $prop->{'@id'};
     ## $typeMap{$prop_id} = $prop;
@@ -799,7 +818,7 @@ sub outputOntology {
 		'@context' => "http://PUBLIC/ontologies/menuContext.jsonld",
 		'@id' => "$idname",
 		'@type' => 'PlrOntology',
-   		'label' => \%$label,
+		'label' => \%$label,
 		'defines' => \@types,
 	};
 
