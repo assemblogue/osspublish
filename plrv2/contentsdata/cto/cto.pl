@@ -466,7 +466,7 @@ sub parseLabel {
 
 	my $i = 0;
 	foreach  my $ky (@name) {
-		if ($la[$i]) {
+		if ($la[$i] ne "") {
 			parseLabelLang($type, $la[$i], $ky);
 		}
 
@@ -491,7 +491,7 @@ sub parseLabelLang {
 
 		# localが無い
 		if (@elm == 1) {
-			$ll{''} = $elm[0] if ($elm[0]);
+			$ll{''} = $elm[0] if ($elm[0] ne "");
 		}
 		# localつき
 		elsif (@elm == 2) {
