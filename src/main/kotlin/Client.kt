@@ -12,7 +12,6 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import kotlin.io.path.ExperimentalPathApi
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.apache.poi.ss.usermodel.WorkbookFactory
@@ -107,13 +106,13 @@ class Client {
 		}
 
 		fun parseFileToUpload(linkName: String, node: JsonNode, fileEntries: Map<String, String>): FileToUpload {
-			val format = node.get("format").asText()
-			val file = node.get("file").asText()
-			val id = node.get("id").asText()
+			val format: String = node.get("format")?.asText() ?: error("'format' is missing in index")
+			val file: String = node.get("file")?.asText() ?: error("'file' is missing in index")
+			val id: String = node.get("id")?.asText() ?: error("'id' is missing in index")
 			val labels = parseLabels(node.get("label")!!)
 			return FileToUpload(
 				linkName, id, labels, format,
-				fileEntries[file!!] ?: error("referencing non-existing file"))
+				fileEntries[file] ?: error("referencing non-existing file"))
 		}
 
 		fun filesToUpload(node: JsonNode, fileEntries: Map<String, String>): List<FileToUpload> {
@@ -207,7 +206,6 @@ class Client {
 			}
 		}
 
-		@OptIn(ExperimentalPathApi::class)
 		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
 			val client = OkHttpClient.Builder()
 				.connectTimeout(60000L, TimeUnit.MILLISECONDS)

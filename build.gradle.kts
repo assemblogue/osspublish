@@ -1,13 +1,13 @@
-plugins {
-	application
-	kotlin("jvm") version "1.4.31"
-
-	id("com.github.johnrengelman.shadow") version "5.2.0"
+repositories {
+	gradlePluginPortal()
+	maven(url = "https://www.assemblogue.com/m2repository/")
 }
 
-repositories {
-	jcenter()
-	maven(url = "https://www.assemblogue.com/m2repository/")
+plugins {
+	application
+	kotlin("jvm") version "1.5.20"
+
+	id("com.github.johnrengelman.shadow") version "5.2.0"
 }
 
 java {
@@ -16,22 +16,21 @@ java {
 }
 
 application {
-	mainClassName = "Client"
+	mainClass.set("Client")
 	defaultTasks("run")
 }
 
 dependencies {
 	compileOnly(files("$projectDir/libs/plr2_util.jar"))
 	implementation(kotlin("stdlib-jdk8"))
-	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.3")
-	implementation("com.fasterxml.jackson.core:jackson-databind:2.9.8")
-	implementation("com.squareup.okhttp3:okhttp:4.9.0")
-	implementation("org.apache.poi:poi:4.1.0")
-	implementation("org.apache.poi:poi-ooxml:4.1.0")
+	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.0")
+	implementation("com.fasterxml.jackson.core:jackson-databind:2.12.4")
+	implementation("com.squareup.okhttp3:okhttp:4.9.1")
+	implementation("org.apache.poi:poi:4.1.2")
+	implementation("org.apache.poi:poi-ooxml:4.1.2")
 	implementation("com.assemblogue.plr:lib-generic:2.2.+")
-	testImplementation(platform("org.junit:junit-bom:5.7.1"))
-	testImplementation("org.junit.jupiter:junit-jupiter")
-	testImplementation("com.squareup.okhttp3:mockwebserver:4.9.0")
+	testImplementation("org.junit.jupiter:junit-jupiter:5.7.2")
+	testImplementation("com.squareup.okhttp3:mockwebserver:4.9.1")
 }
 
 tasks {

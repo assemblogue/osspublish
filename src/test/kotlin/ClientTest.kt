@@ -40,6 +40,12 @@ class ClientTest {
 				"application/ld+json",
 				"{\"foo\": 0}"),
 			f)
+		assertThrows(IllegalStateException::class.java) {
+			parseFileToUpload("ontology", ObjectMapper().readTree("{}"), mapOf())
+		}
+		assertThrows(IllegalStateException::class.java) {
+			parseFileToUpload("ontology", ObjectMapper().readTree("{\"id\": \"test\"}"), mapOf())
+		}
 	}
 
 	@Test
