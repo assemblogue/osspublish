@@ -452,7 +452,7 @@ sub singleChannelSummary {
 		}
 
 		# styleは中身までパースする
-		if ( $style =~ /([nb]|[LBG])([LRTB])?([0-9](em)?)?(\s([a-z]+))?/) {
+		if ( $style =~ /([nb]|[LBG])([LRTB])?([0-9](em)?)?(\s([a-z]+|#([0-9a-fA-F]{6,8})))?/) {
 			$us_item->{'rule'}  = $1;
 			$align = $2;
 			$width = $3;
@@ -1061,7 +1061,7 @@ sub parseLabelLang {
     my %ll;
 
 	# local毎に分解 (local:string;...)[]
-    my @l = split(/;/, $label, 3);
+    my @l = split(/;/, $label);
 
     foreach $lcl (@l) {
 
