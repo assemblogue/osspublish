@@ -2,7 +2,7 @@
 # This is the Gradle build system for JVM applications
 # https://gradle.org/
 # https://github.com/gradle/gradle
-image: gradle:alpine
+image: gradle:6-jdk8
 
 # Disable the Gradle daemon for Continuous Integration servers as correctness
 # is usually a priority over speed in CI environments. Using a fresh
@@ -15,7 +15,7 @@ before_script:
   - export GRADLE_USER_HOME=`pwd`/.gradle
 
 build:client:
-  image: gradle:alpine
+  image: gradle:6-jdk8
   stage: build
   script: gradle --build-cache assemble
   cache:
@@ -26,7 +26,7 @@ build:client:
       - .gradle
 
 test:client:
-  image: gradle:alpine
+  image: gradle:6-jdk8
   stage: test
   script: gradle check
   cache:
