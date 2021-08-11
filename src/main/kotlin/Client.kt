@@ -109,7 +109,7 @@ class Client {
 			val format: String = node.get("format")?.asText() ?: error("'format' is missing in index")
 			val file: String = node.get("file")?.asText() ?: error("'file' is missing in index")
 			val id: String = node.get("id")?.asText() ?: error("'id' is missing in index")
-			val labels = parseLabels(node.get("label")!!)
+			val labels = parseLabels(node.get("label") ?: error("'label' is missing in index"))
 			return FileToUpload(
 				linkName, id, labels, format,
 				fileEntries[file] ?: error("referencing non-existing file"))
@@ -371,7 +371,7 @@ class Client {
 							}
 						}
 					  if (fileEntries["index.json"] == null) {
-							throw ClientException("index.json is missing: ${fileEntries.keys}")
+							throw ClientException("index.json is missing: ${arg}, ${fileEntries.keys}")
 						}
 						val filesToUpload = filesToUpload(
 							readJsonTreeFromString(fileEntries["index.json"]!!), fileEntries

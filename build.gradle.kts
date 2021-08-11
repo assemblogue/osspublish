@@ -4,10 +4,9 @@ repositories {
 }
 
 plugins {
-	application
 	kotlin("jvm") version "1.5.20"
-
-	id("com.github.johnrengelman.shadow") version "5.2.0"
+	id("com.github.johnrengelman.shadow") version "6.1.0"
+	application
 }
 
 java {
@@ -16,7 +15,7 @@ java {
 }
 
 application {
-	mainClass.set("Client")
+	mainClassName ="Client"
 	defaultTasks("run")
 }
 
