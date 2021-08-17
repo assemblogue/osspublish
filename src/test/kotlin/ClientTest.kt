@@ -204,6 +204,14 @@ class ClientTest {
 	}
 
 	@Test
+	fun `unzip a large zip as stream`() {
+		val stream = this.javaClass.classLoader.getResource("large.zip")!!.openStream()
+		val pairs = unzipInputStream(stream)
+		assertEquals(setOf("pg1.txt", "pg2.txt"), pairs.keys.toSet())
+		assertEquals(listOf(120946, 11101), listOf(pairs["pg1.txt"]!!, pairs["pg2.txt"]!!).map{ it.toByteArray().size })
+	}
+
+	@Test
 	fun `parses a dummy zip and get an empty index`() {
 		val buffer = Buffer()
 		buffer.writeAll(this.javaClass.classLoader.getResource("test_dummy.zip")!!.openStream().source())

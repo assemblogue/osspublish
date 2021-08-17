@@ -78,7 +78,7 @@ class Client {
 			}
 		}
 
-		fun unzipEntries(zis: ZipInputStream): Sequence<ZipEntry> {
+		private fun unzipEntries(zis: ZipInputStream): Sequence<ZipEntry> {
 			return sequence {
 				var entry = zis.getNextEntry()
 				while (entry != null) {
@@ -93,10 +93,8 @@ class Client {
 		fun unzipInputStream(inputStream: InputStream): Map<String, String> {
 			return ZipInputStream(inputStream).use { zis ->
 				unzipEntries(zis).associate {
-					ByteArray(it.size.toInt()).let { bytes ->
-						zis.read(bytes)
-						Pair(it.name!!, bytes.toString(Charsets.UTF_8))
-					}
+					val bytes = zis.readBytes()
+					Pair(it.name!!, bytes.toString(Charsets.UTF_8))
 				}
 			}
 		}
