@@ -103,11 +103,11 @@ class ClientTest {
 	fun `ontology with no definition is empty`() {
 		assert(hasEmptyContent(FileToUpload("ontology", "foo_bar", mapOf(), content="""
 {
-   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
-   "@id" : "",
-   "@type" : "PlrOntology",
-   "defines" : [],
-   "label" : {}
+	"@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+	"@id" : "",
+	"@type" : "PlrOntology",
+	"defines" : [],
+	"label" : {}
 }
 """)))
 	}
@@ -116,24 +116,24 @@ class ClientTest {
 	fun `ontology with definition is not empty`() {
 		assertFalse(hasEmptyContent(FileToUpload("ontology", "foo_bar", mapOf(), content="""
 {
-   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
-   "@id" : "",
-   "@type" : "PlrOntology",
-   "defines" : [{
-    "@id": "Node",
-    "@type": "Class",
-    "subClassOf": [
-      "Resource",
-      "owl:Thing",
-      "schema:Thing"
-    ],
+	"@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+	"@id" : "",
+	"@type" : "PlrOntology",
+	"defines" : [{
+		"@id": "Node",
+		"@type": "Class",
+		"subClassOf": [
+			"Resource",
+			"owl:Thing",
+			"schema:Thing"
+		],
 
-    "label": {
-      "": "Node",
-      "ja": "ノード"
-    }
-  }],
-   "label" : {}
+		"label": {
+			"": "Node",
+			"ja": "ノード"
+		}
+	}],
+	"label" : {}
 }
 """)))
 	}
@@ -142,11 +142,11 @@ class ClientTest {
 	fun `stylesheet with no restriction is empty`() {
 		assert(hasEmptyContent(FileToUpload("restriction", "foo_bar", mapOf(), content="""
 {
-   "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
-   "restriction" : {
-      "@id" : "Foo",
-      "defines" : []
-   }
+	 "@context" : "http://PUBLIC/ontologies/menuContext.jsonld",
+	 "restriction" : {
+			"@id" : "Foo",
+			"defines" : []
+	 }
 }
 """)))
 	}
@@ -196,7 +196,7 @@ class ClientTest {
 	@Test
 	fun `open a dummy zip and ensure the stream is closed after`() {
 		this.javaClass.classLoader.getResource("test_dummy.zip")!!.openStream().use { stream ->
-		  assertEquals("{}", unzipInputStream(stream)["index.json"]!!.trim())
+			assertEquals("{}", unzipInputStream(stream)["index.json"]!!.trim())
 			assertThrows(java.io.IOException::class.java) {
 				stream.available()
 			}

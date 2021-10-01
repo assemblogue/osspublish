@@ -368,7 +368,7 @@ class Client {
 								throw ClientException("File not supported: " + arg)
 							}
 						}
-					  if (fileEntries["index.json"] == null) {
+						if (fileEntries["index.json"] == null) {
 							throw ClientException("index.json is missing: ${arg}, ${fileEntries.keys}")
 						}
 						val filesToUpload = filesToUpload(
