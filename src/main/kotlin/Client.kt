@@ -4,7 +4,10 @@ import com.assemblogue.plr.lib.FileNode
 import com.assemblogue.plr.lib.PLR
 import com.assemblogue.plr.lib.model.PublicRoot
 import com.assemblogue.plr.lib.searchNodeFiles
-import com.assemblogue.plr.util.NodeSchemas
+import com.assemblogue.plr.util.CLASS_OSS
+import com.assemblogue.plr.util.PROP_OSS
+import com.assemblogue.plr.util.PROP_OSS_CONTAINERS
+import com.assemblogue.plr.util.PROP_OSS_ID
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.MediaType.Companion.toMediaType
@@ -114,7 +117,7 @@ class Client {
 		}
 
 		fun filesToUpload(node: JsonNode, fileEntries: Map<String, String>): List<FileToUpload> {
-			return NodeSchemas.PROP_OSS_CONTAINERS.flatMap { linkName ->
+			return PROP_OSS_CONTAINERS.flatMap { linkName ->
 				if (node.has(linkName)) {
 					node.get(linkName).let { n -> (0 until n.size()).map {
 					parseFileToUpload(linkName, n.get(it), fileEntries)
@@ -125,13 +128,10 @@ class Client {
 		}
 
 		fun getPropOssOrCreate(root: PublicRoot): EntityNode {
-			val c = root.getProperty(NodeSchemas.PROP_OSS).filter { it.isEntity() && it.asEntity().isInner() }.map { it.asEntity() }
+			val c = root.getProperty(PROP_OSS).filter { it.isEntity() && it.asEntity().isInner() }.map { it.asEntity() }
 			when (c.size) {
 				0 -> {
-					val ossNode = root.node.newInnerEntity(
-						NodeSchemas.PROP_OSS,
-						NodeSchemas.CLASS_OSS
-					)
+					val ossNode = root.node.newInnerEntity(PROP_OSS, CLASS_OSS)
 					root.node.syncAndWait()
 					return ossNode
 				}
@@ -146,7 +146,7 @@ class Client {
 		}
 
 		fun filesInStorage(node: EntityNode): Flow<FileInStorage> = flow {
-			NodeSchemas.PROP_OSS_CONTAINERS.flatMap { linkName ->
+			PROP_OSS_CONTAINERS.flatMap { linkName ->
 				node.getProperty(linkName).map{it.asFile()}.map { fn ->
 					val labels = fn.titleValueMap.map{ (k, v) -> (k!! to v!! as String)}.toMap()
 					emit(FileInStorage(linkName, labels, fn.format, fn))
@@ -189,7 +189,7 @@ class Client {
 		}
 
 		fun generateOssId(file: FileInStorage): String {
-			return file.node.peerEntity.getProperty(NodeSchemas.PROP_OSS_ID)[0].asLiteral().value.toString()
+			return file.node.peerEntity.getProperty(PROP_OSS_ID)[0].asLiteral().value.toString()
 		}
 		fun generateOssId(file: FileToUpload, userId: String): String {
 			return generateOssId(file.linkName, file.labels, file.id, userId)
@@ -277,7 +277,7 @@ class Client {
 			val fileNode = ossNode.newFile(file.linkName, file.format, true)
 			fileNode.put(file.content.toByteArray())
 			fileNode.titleValueMap = file.labels
-			fileNode.peerEntity.newLiteral(NodeSchemas.PROP_OSS_ID).value = id
+			fileNode.peerEntity.newLiteral(PROP_OSS_ID).value = id
 		}
 
 		fun selectIdFromStorageList(plr: PLR): String {
