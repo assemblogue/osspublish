@@ -25,7 +25,7 @@ my $g_mode, $g_submode;
 
 # ontology
 my @types_oc, @types_or;
-my %map_oc, %map_occ, %map_or;
+my %map_oc, %map_occ, %map_oce, %map_or;
 
 # timeline
 my @types_t;
@@ -80,7 +80,6 @@ sub parseInput {
 		if ($f_inc != 0) {
 			$g_lc++;
 		}
-
 		$f_inc = extract(@$fields);
     }
 }
@@ -94,8 +93,10 @@ sub extract {
 	my $comment = 0;
 
     foreach $_ (@_) {
-		if (($g_submode eq "constraint") && ($clmn < $g_n_clmn)) {
-			# 空セルに意味がある場合がある。
+        if (($g_submode eq "constraint")) {
+            if ($_ eq '') {
+                next;
+            }
 		}
 		else {
 			unless ($_) {
@@ -202,7 +203,6 @@ sub ontRestriction {
 }
 
 # オントロジー：制約(constraint)
-my @o_clmn;
 my $g_evtValIndex;
 sub ontConstraint {
 	my ($blk, $clmn, $params) = @_;
@@ -210,12 +210,11 @@ sub ontConstraint {
 
 	# 0行目は変項定義
 	if ($g_lc == 0) {
-		# 変項は[ ] で囲まれているので、片方を利用して分割
-		my @clsname = split(/]/,$params);
+		# 変項はスペース区切りで記載されるため、スペースで分割
+		my @clsname = split(/ /,$params);
 
 		foreach my $cls (@clsname) {
 			# 先頭の[を削除し、期間記述しと分割する
-			$cls =~ s/^(\s)?\[//;
 			$cls =~ s/^(\w+)[:]//;
 			my $id = $1;
 			my $period = $cls;
@@ -230,7 +229,6 @@ sub ontConstraint {
 				'index' => "$g_evtValIndex",
 				'type' => "$clmn"
 				);
-
 			if ($period ne "") {
 				$elm{'period'} = "$period";
 			}
@@ -252,6 +250,12 @@ sub ontConstraint {
 		my $evtval = $blk->{"eventVariables"};
 		my $max_clmn = 0;
 		my $already_check = 0;
+        my $expresstion = $map_oce->{$g_idx};
+
+        if ($clmn == 0) {
+            $map_oce->{$g_idx} = $expresstion;
+        }
+
 		# カラム数の最大値を求める
 		foreach my $elm (@$evtval) {
 			if ($elm->{'type'} =~ /^[(pv)?(sv)?]/) {
@@ -262,67 +266,46 @@ sub ontConstraint {
 				$max_clmn = $elm->{'type'};
 			}
 		}
-
 		if ($g_n_clmn < $max_clmn) {
 			$g_n_clmn = $max_clmn;
 		}
 
-		if ($already_check eq 0) {
+        if ($already_check eq 0) {
 			# 主変項、従属変項の設定を書き込む
 			foreach my $elm (@$evtval) {
-				if ($elm->{'type'} eq $max_clmn) { # 最右セル中のEventVariableを主変項
+				if ($elm->{'index'} == 0) { # 最右セル中のEventVariableを主変項
 					$elm->{'type'} = "pv";
-
-					if ($max_clmn eq 1) { # 1項目しか無い場合
-						$elm->{'type'} = "pvsv";
-					}
-				}
-				else {
-					$elm->{'type'} = "sv";
+                } else {
+                    $elm->{'type'} = "sv";
 				}
 			}
 		}
 
-		# 項目名配列をクリア
-		if ($clmn == 0) {
-			@o_clmn = ();
-		}
-
-		push(@o_clmn, $params);
-
+        $expresstion->{$clmn} = $params;
+        my $expressions = $blk->{"expressions"};
+        unless ($expressions) {
+            $blk->{'expressions'} = [ \%$expresstion ];
+        }
+        else {
+            push(@$expressions, \%$expresstion);
+        }
 		return 0;
 	}
 	# 以下、値が入る
 	else {
 		# 項目名を取得
-		my $nm = $o_clmn[$clmn];
 		my $elm = $map_occ->{$g_idx};
-
-		if ($clmn == 0) {
-			my $rightmost = "";
-
-			# 出力時に空項目も出力させるため、全項目に空要素を入れる。
-			foreach (@o_clmn) {
-				$elm->{$_} = "";
-				$rightmost = $_;
-			}
-			$map_occ->{$g_idx} = $elm;
-
-			# 最左右行
-			#$blk->{'leftmostColumn'} = $o_clmn[0]; # 最左行
-			#$blk->{'rightmostColumn'} = $rightmost; # 最右行
-		}
-
-		$elm->{$nm} = "$params";
-
-		my $df = $blk->{'defines'};
-		unless ($df) {
-			$blk->{'defines'} = [ \%$elm ];
-		} else {
-			if ($clmn == 0) {
-				push(@$df, \%$elm);
-			}
-		}
+        $elm->{$clmn} = "$params";
+        $map_occ->{$g_idx} = $elm;
+        my $conditions = $blk->{"conditions"};
+        unless ($conditions) {
+            $blk->{'conditions'} = [ \%$elm ];
+        }
+        else {
+            if ($clmn == 0) {
+                push(@$conditions, \%$elm);
+            }
+        }
 	}
 
 	return $idx;
@@ -693,11 +676,11 @@ sub questionConstraint {
 	# 0行目は変項定義
 	if ($g_lc == 0) {
 		# 変項は[ ] で囲まれているので、片方を利用して分割
-		my @clsname = split(/]/,$params);
+		my @clsname = split(/¥s+/,$params);
 
 		foreach my $cls (@clsname) {
 			# 先頭の[を削除し、期間記述しと分割する
-			$cls =~ s/^(\s)?\[//;
+			#$cls =~ s/^(\s)?\[//;
 			$cls =~ s/^(\w+)[:]//;
 			my $id = $1;
 			my $period = $cls;
