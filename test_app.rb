@@ -1,10 +1,9 @@
 # frozen_string_literal: true
 
-ENV['APP_ENV'] = 'test'
-
 require './app'
 require 'test/unit'
 require 'rack/test'
+require 'net/http/post/multipart'
 require 'json'
 
 def unzip(str)
@@ -17,9 +16,50 @@ def unzip(str)
   unzipped
 end
 
+HOST = URI.parse('https://osscon.herokuapp.com')
+
+class SimpleResponse
+  attr_accessor :success
+  attr_accessor :body
+  def initialize(success, body)
+    self.success = success
+    self.body = body
+  end
+
+  def ok?
+    success
+  end
+end
+
 # Unit tests for class App
 class AppTest < Test::Unit::TestCase
-  include Rack::Test::Methods
+
+  if ENV['APP_ENV'] == 'production'
+    require 'open-uri'
+    require 'net/http'
+    AppTest.attr_accessor(:last_response)
+    def get(path)
+      uri = HOST.clone
+      uri.path = path
+      res = uri.open
+      puts("GET: #{res.inspect}")
+      self.last_response = SimpleResponse.new(res.status[0] == '200', res.read)
+    end
+
+    def post(path, params:)
+      uri = HOST.clone
+      uri.path = path
+      req = Net::HTTP::Post::Multipart.new(uri, params)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.scheme == 'https'
+      http.set_debug_output($stderr)
+      res = http.request(req)
+      self.last_response = SimpleResponse.new(res.is_a?(Net::HTTPSuccess),
+                                              res.body)
+    end
+  else
+    include Rack::Test::Methods
+  end
 
   def app
     App

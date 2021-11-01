@@ -4,6 +4,7 @@ GEM
     e2mmap (0.1.0)
     mini_portile2 (2.4.0)
     multi_json (1.15.0)
+    multipart-post (2.1.1)
     mustermann (1.1.1)
       ruby2_keywords (~> 0.0.1)
     nio4r (2.5.4)
@@ -43,6 +44,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  multipart-post
   puma
   rack-test
   roo (~> 2.8.3)
@@ -51,6 +53,9 @@ DEPENDENCIES
   sinatra-contrib
   test-unit
   thwait
+
+RUBY VERSION
+   ruby 2.7.1p83
 
 BUNDLED WITH
    2.1.4
