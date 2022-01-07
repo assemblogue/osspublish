@@ -67,8 +67,8 @@ class AppTest < Test::Unit::TestCase
 
   def test_it_contains_submit_button
     get '/'
-    assert last_response.ok?
-    assert last_response.body.include? '<button>Submit</button>'
+    assert_true last_response.ok?
+    assert_include last_response.body, '<button>Submit</button>'
   end
 
   def post_for_csv(content)
@@ -85,11 +85,11 @@ class AppTest < Test::Unit::TestCase
 
   def test_it_gives_zipped_log
     unzipped = post_for_csv('foo,bar')
-    assert_includes unzipped.keys, 'log.txt'
-    assert_includes unzipped.keys, 'index.json'
+    assert_include unzipped.keys, 'log.txt'
+    assert_include unzipped.keys, 'index.json'
   end
 
-  def test_it_gives_zipped_jsonld
+  def test_it_gives_ontology
     unzipped = post_for_csv(
       <<~CSV
         "]O Base ja:基本!;Base!",
@@ -102,6 +102,20 @@ class AppTest < Test::Unit::TestCase
     assert_equal '基本!', index['ontology'][0]['label']['ja']
     assert_equal 'Base!', index['ontology'][0]['label']['']
     assert_equal 'Base', index['ontology'][0]['id']
+  end
+
+  def test_it_gives_ontology_content
+    unzipped = post_for_csv(
+      <<~CSV
+        "]O Base ja:基本!;Base!",
+        "Event(1 ja:事象;Event","begin=1 ja:開始;begin","dateTime"
+      CSV
+    )
+
+    index = JSON.parse(unzipped['index.json'])
+    assert_equal ['ontology'], index.keys
+    ontology = JSON.parse(unzipped[index['ontology'][0]['file']])
+    assert_equal ['@id', '@type', 'label', 'maxClassCardinality', 'subClassOf'], ontology['defines'].find{|x| x['@id'] == '#Event'}.keys.sort
   end
 
   def test_it_gives_log
