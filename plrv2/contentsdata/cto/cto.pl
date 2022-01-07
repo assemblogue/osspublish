@@ -509,7 +509,7 @@ sub parseClassIdParams {
 
     while ($idParams) {
 	/.*/;
-	$idParams =~ s/^([!])(\d*)//;
+	$idParams =~ s/^([!=(<])(\d*)//;
 
 	unless ($1) {
 	    print STDERR
@@ -522,6 +522,18 @@ sub parseClassIdParams {
 	    # selected
 	    $cls->{'selected'} = JSON::true;
 	    return;
+	} else {
+		my $num = $2;
+		my $n;
+		if ($1 eq "=") {
+			$n = "classCardinality";
+		} elsif ($1 eq "(") {
+			$n = "maxClassCardinality";
+		} elsif ($1 eq "<") {
+			$n = "maxClassCardinality";
+			$num++;
+		}
+		$cls->{$n} = $num + 0;
 	}
     }
 }
