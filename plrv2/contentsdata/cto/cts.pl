@@ -94,7 +94,7 @@ sub extract {
 
     foreach $_ (@_) {
         if (($g_submode eq "constraint")) {
-            if ($_ eq '') {
+            if ($_ eq '' && ($clmn >= $g_n_clmn)) {
                 next;
             }
 		}
