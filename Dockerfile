@@ -7,4 +7,4 @@ RUN bundle config build.nokogiri --use-system-libraries
 RUN bundle install
 RUN curl -L https://cpanmin.us | perl - App::cpanminus
 RUN cpanm --notest Text::CSV_XS JSON
-CMD bundle exec rackup -p $PORT -E $RACK_ENV
+CMD bundle exec rackup -p $PORT -E ${RACK_ENV:-test}
