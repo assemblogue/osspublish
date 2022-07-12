@@ -93,7 +93,7 @@ sub extract {
 	$autoClassCount = 0;
 
     foreach $_ (@_) {
-		last unless ($_);
+		next unless ($_);
 
 		$autoClassCount++;
 
@@ -126,6 +126,9 @@ sub extract {
 					$prop = "";
 				}
 			# } elsif (/^_?[a-z]/) {
+			} elsif (/^([a-z]{2}(_[a-z]{2})*)?:(.*)$/s) {
+				$prop->{'tooltip'} = {} unless ($prop->{'tooltip'});
+				$prop->{'tooltip'}->{$1} = $3;
 			} elsif (/^[a-z]/) {
 				# Property
 				my ($id, $label) = split(/[ \n]+/, $_, 2);
