@@ -386,7 +386,7 @@ class Client {
 								println(res.format("overwriting", file.labels, id))
 								filesInStorage.getValue(normalizeOssId(id)).node.let { n ->
 									if (n.get().readBytes().contentEquals(file.content.toByteArray())) {
-										println(res.format("skipped_unchanged"))
+										println(res.format("skipped_unchanged", file.labels))
 									} else {
 										n.put(file.content.toByteArray())
 									}
