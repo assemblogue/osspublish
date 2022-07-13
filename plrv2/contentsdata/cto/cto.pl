@@ -111,7 +111,8 @@ sub extract {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
-			} elsif (/^([a-zA-Z]{2}(_[a-zA-Z]{2})*)?:(.*)$/s) {
+			} elsif (/^([a-zA-Z]{2}(_[a-zA-Z]{2})*)?:\n(.*)$/s) {
+				# Tooltip
 				$prop->{'tooltip'} = {} unless ($prop->{'tooltip'});
 				$prop->{'tooltip'}->{$1} = $3;
 			}
