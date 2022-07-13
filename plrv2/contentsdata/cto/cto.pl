@@ -111,6 +111,9 @@ sub extract {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
+			} elsif (/^([a-zA-Z]{2}(_[a-zA-Z]{2})*)?:(.*)$/s) {
+				$prop->{'tooltip'} = {} unless ($prop->{'tooltip'});
+				$prop->{'tooltip'}->{$1} = $3;
 			}
 			#if (/^_?[A-Z]/) {
 			elsif (/^_?[A-Z]/ || /^_[a-z]/) {
@@ -126,9 +129,6 @@ sub extract {
 					$prop = "";
 				}
 			# } elsif (/^_?[a-z]/) {
-			} elsif (/^([a-z]{2}(_[a-z]{2})*)?:(.*)$/s) {
-				$prop->{'tooltip'} = {} unless ($prop->{'tooltip'});
-				$prop->{'tooltip'}->{$1} = $3;
 			} elsif (/^[a-z]/) {
 				# Property
 				my ($id, $label) = split(/[ \n]+/, $_, 2);
