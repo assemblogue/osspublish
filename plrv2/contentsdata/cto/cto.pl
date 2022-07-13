@@ -93,7 +93,7 @@ sub extract {
 	$autoClassCount = 0;
 
     foreach $_ (@_) {
-		last unless ($_);
+		next unless ($_);
 
 		$autoClassCount++;
 
@@ -111,6 +111,10 @@ sub extract {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
+			} elsif (/^([a-zA-Z]{2}(_[a-zA-Z]{2})*)?:\n(.*)$/s) {
+				# Tooltip
+				$prop->{'tooltip'} = {} unless ($prop->{'tooltip'});
+				$prop->{'tooltip'}->{$1} = $3;
 			}
 			#if (/^_?[A-Z]/) {
 			elsif (/^_?[A-Z]/ || /^_[a-z]/) {
