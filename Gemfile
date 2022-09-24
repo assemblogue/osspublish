@@ -3,7 +3,7 @@ ruby '~> 2.7.0'
 gem 'puma'
 gem 'rack-test', group: :test
 gem 'roo', '~> 2.8.3'
-gem 'rubyzip'
+gem 'rubyzip', '> 2.3'
 gem 'sinatra'
 gem 'sinatra-contrib'
 gem 'test-unit', group: :test

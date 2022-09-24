@@ -11,4 +11,5 @@
   <entry key="spreadsheet-not-retrieved">Spreadsheet not retrieved: {0}</entry>
   <entry key="file-not-supported">File not supported: {0}</entry>
   <entry key="empty-content">Empty content: {0}</entry>
+  <entry key="using-endpoint-url">Using {0}</entry>
 </properties>

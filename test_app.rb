@@ -16,11 +16,11 @@ def unzip(str)
   unzipped
 end
 
-HOST = URI.parse('https://osscon.herokuapp.com')
+HOST = URI.parse('https://osspublish.fly.dev')
 
 class SimpleResponse
-  attr_accessor :success
-  attr_accessor :body
+  attr_accessor :success, :body
+
   def initialize(success, body)
     self.success = success
     self.body = body
@@ -33,7 +33,6 @@ end
 
 # Unit tests for class App
 class AppTest < Test::Unit::TestCase
-
   if ENV['APP_ENV'] == 'production'
     require 'open-uri'
     require 'net/http'
@@ -115,7 +114,8 @@ class AppTest < Test::Unit::TestCase
     index = JSON.parse(unzipped['index.json'])
     assert_equal ['ontology'], index.keys
     ontology = JSON.parse(unzipped[index['ontology'][0]['file']])
-    assert_equal ['@id', '@type', 'label', 'maxClassCardinality', 'subClassOf'], ontology['defines'].find{|x| x['@id'] == '#Event'}.keys.sort
+    result = ontology['defines'].find { |x| x['@id'] == '#Event' }.keys.sort
+    assert_equal ['@id', '@type', 'label', 'maxClassCardinality', 'subClassOf'], result
   end
 
   def test_it_gives_log

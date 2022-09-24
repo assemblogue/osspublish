@@ -11,4 +11,5 @@
   <entry key="spreadsheet-not-retrieved">スプレッドシートを取得できませんでした: {0}</entry>
   <entry key="file-not-supported">サポートされていないファイルです: {0}</entry>
   <entry key="empty-content">内容が空です: {0}</entry>
+  <entry key="using-endpoint-url">{0}を利用します</entry>
 </properties>

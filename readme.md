@@ -4,7 +4,7 @@ SpreadSheet.docx - スプレッドシートの書式の定義文書です。
 
 osscon-all.jar - コマンドラインに渡したOSSを、自分のPLRアカウントの所定の位置に配置するツールです。必要に応じて下記のURLを呼び出します。
 
-https://osscon.herokuapp.com - スプレッドシート(xlsx)をJSONLDの束(zip)に変換する外部サーバーです。
+https://osspublish.fly.dev - スプレッドシート(xlsx)をJSONLDの束(zip)に変換する外部サーバーです。
 
 
 ## ビルド方法
@@ -23,7 +23,7 @@ config.properties ファイルに下記のような内容を用意してくだ�
 
     java -jar osscon-all.jar Sample.xlsx
 
-この方法を使うと、起動のたびに `osscon.herokuapp.com` にアクセスします。
+この方法を使うと、起動のたびに `osspublish.fly.dev` にアクセスします。
 
 ## 使用方法（ローカルサーバー利用）
 
@@ -50,4 +50,4 @@ config.properties ファイルに下記のような内容を用意してくだ�
   https://drive.google.com/drive/u/0/folders/182s6nytpYtOHoNH-0ko6ggIV8otCMGoI
   
 - 初回更新後に `EntryNotFoundException` が表示される場合は、おそらく作成自体は成功しています。
-- タイムアウトが表示される場合、もう一度試してみてください（herokuappは長時間使われないと一旦停止し、再起動に時間がかかります）。
+- タイムアウトが表示される場合、しばらく待ってからもう一度試してみてください。

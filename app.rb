@@ -16,7 +16,7 @@ require './gen_com'
 def spreadsheet_to_csv(path, tmpdir)
   begin
     xlsx = Roo::Spreadsheet.open(path)
-    fpath = File.join(tmpdir, File.basename(path) + SecureRandom.hex + '.csv')
+    fpath = File.join(tmpdir, "#{File.basename(path)}#{SecureRandom.hex}.csv")
     return File.open(fpath, 'w') do |f|
       f.write(xlsx.to_csv)
       f.path
@@ -144,10 +144,11 @@ class App < Sinatra::Base
   get '/env' do
     content_type 'text/plain'
     unless settings.environment == :production
-      """
-#{ENV.pretty_inspect}
+      <<~RETURN
+        #{ENV.pretty_inspect}
 
-#{self.pretty_inspect}"""
+        #{self.pretty_inspect}
+      RETURN
     end
   end
 end

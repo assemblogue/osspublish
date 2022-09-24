@@ -320,12 +320,14 @@ class Client {
 			val props = findConfigOrCreate(
 				File("config.properties"),
 				mapOf(
-					"plr.oss.endpoint" to "https://osscon.herokuapp.com/convert",
+					"plr.oss.endpoint" to "https://osspublish.fly.dev/convert",
 					"verbose" to "false")
 			)
 			val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
 			val passphrase = props.getProperty("plr.passphrase")
 			val verbose = props.getProperty("verbose").toBoolean()
+
+			println(res.format("using-endpoint-url", props.getProperty("plr.oss.endpoint")))
 
 			try {
 				val storage = authenticateAndGetStorage(plr, plrId, passphrase)!!
