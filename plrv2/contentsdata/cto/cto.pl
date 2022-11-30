@@ -44,7 +44,7 @@ sub parseInput {
 		}
 		$lastFields = $fields;
 
-		extract(@$fields);
+		extract($fields, $lc);
     }
 }
 
@@ -87,15 +87,23 @@ sub checkWord {
 #     プロパティなら、サブプロパティ
 #　となる。
 sub extract {
+    my ($fields, $lc) = @_;
+
     my $pcls="", $cls="", $prop="";
 
 	# 自動生成クラスカウンタ
 	$autoClassCount = 0;
 
-    foreach $_ (@_) {
-		next unless ($_);
-
+    foreach $_ (@$fields) {
 		$autoClassCount++;
+
+		if (($lc == 1) && /^M$/) {
+		    $lf = $autoClassCount;
+		    last;
+		}
+		last if ($lf && ($autoClassCount >= $lf));
+
+		next unless ($_);
 
 		if (/^\\.*/) {
 			#コメントカラム
