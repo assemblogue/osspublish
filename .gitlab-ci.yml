@@ -10,6 +10,7 @@ image: gradle:6-jdk8
 # isolated from any previous builds.
 variables:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  TEST_IMAGE_NAME: "${CI_REGISTRY_IMAGE}/test"
 
 before_script:
   - export GRADLE_USER_HOME=`pwd`/.gradle
@@ -42,5 +43,5 @@ build:server:
    - docker:dind
   stage: build
   script:
-   - docker build -t osspublish .
-   - docker run osspublish ruby test_app.rb
+    - docker build -t $TEST_IMAGE_NAME --target test .
+    - docker run $TEST_IMAGE_NAME
