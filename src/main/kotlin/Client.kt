@@ -220,7 +220,11 @@ class Client {
 				.post(requestBody)
 				.build()
 			val response = client.newCall(request).execute()
-			return unzipInputStream(response.body!!.byteStream())
+			if (response.isSuccessful) {
+				return unzipInputStream(response.body!!.byteStream())
+			} else {
+				throw ClientException("Bad response: " + response)
+			}
 		}
 
 		@OptIn(ExperimentalCoroutinesApi::class)
