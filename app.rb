@@ -28,13 +28,11 @@ end
 
 def run_command_async(command, logger)
   Thread.new do
-    logger.info("Running command: #{command}")
+    logger.info { "Start of command: #{command}" }
     stdout, stderr, status = Open3.capture3(command)
-    unless status.success?
-      logger.info("Stdout: #{stdout}")
-      logger.info("Stderr: #{stderr}")
-    end
-    logger.info("Finishing: #{command}")
+    logger.debug { "Stdout: #{stdout}" }
+    logger.info { "Stderr: #{stderr}" }
+    logger.info { "End of command: #{command}" }
     yield if block_given?
   end
 end
@@ -104,7 +102,7 @@ class App < Sinatra::Base
     end
 
     files = request.env['rack.tempfiles']
-    logger.debug(request.env.inspect)
+    logger.debug { request.env.inspect }
     zip = Tempfile.create(['converted', '.zip']).path
     logger.info("Reading #{files.inspect}")
     Dir.mktmpdir do |tmpdir|
