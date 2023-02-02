@@ -95,6 +95,7 @@ sub extract {
     foreach $_ (@_) {
         if (($g_submode eq "constraint")) {
             if ($_ eq '' && ($clmn >= $g_n_clmn)) {
+                $clmn++;
                 next;
             }
 		}
@@ -295,17 +296,19 @@ sub ontConstraint {
 	else {
 		# 項目名を取得
 		my $elm = $map_occ->{$g_idx};
-        $elm->{$clmn} = "$params";
-        $map_occ->{$g_idx} = $elm;
-        my $conditions = $blk->{"conditions"};
-        unless ($conditions) {
-            $blk->{'conditions'} = [ \%$elm ];
-        }
-        else {
-            if ($clmn == 0) {
-                push(@$conditions, \%$elm);
+        if ($params ne '') {
+            $elm->{$clmn} = "$params";
+            $map_occ->{$g_idx} = $elm;
+            my $conditions = $blk->{"conditions"};
+            unless ($conditions) {
+                $blk->{'conditions'} = [ \%$elm ];
             }
-        }
+            else {
+                if(keys %$elm == 1) {
+                    push(@$conditions, \%$elm);
+                }
+	        }
+	    }
 	}
 
 	return $idx;
