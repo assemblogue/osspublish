@@ -89,7 +89,7 @@ sub checkWord {
 sub extract {
     my ($fields, $lc) = @_;
 
-    my $pcls="", $cls="", $prop="";
+    my $pcls="", $cls="", $prop="", $res;
 
 	# 自動生成クラスカウンタ
 	$autoClassCount = 0;
@@ -107,6 +107,7 @@ sub extract {
 
 		if (/^\\.*/) {
 			#コメントカラム
+			$res = undef;
 		}
 		elsif (/^[\]<][ORCTSMDGQL][sSR]?(,*)?/) {
 			#Mode 先頭カラムでしか出現しないので、本来、カラム毎にチェックは不要
@@ -121,15 +122,18 @@ sub extract {
 				parsePropertyParams($id, $prop, "ObjectProperty");
 			} elsif (/^([a-zA-Z]{2}(_[a-zA-Z]{2})*)?:\n(.*)$/s) {
 				# Tooltip
-				$prop->{'tooltip'} = {} unless ($prop->{'tooltip'});
-				$prop->{'tooltip'}->{$1} = $3;
+				if ($res->{'@id'} =~ /arg[0-9]+/) {
+					$res = $cls;
+				}
+				$res->{'tooltip'} = {} unless ($res->{'tooltip'});
+				$res->{'tooltip'}->{$1} = $3;
 			}
 			#if (/^_?[A-Z]/) {
 			elsif (/^_?[A-Z]/ || /^_[a-z]/) {
 				# Class
 				my ($id, $label) = split(/[ \n]+/, $_, 2);
 
-				$cls = parseClass($id, $label, $pcls);
+				$cls = $res = parseClass($id, $label, $pcls);
 				$pcls = $cls;
 
 				if ($prop) {
@@ -148,7 +152,7 @@ sub extract {
 				}
 				else {
 					# ここは直近のクラス$clsを引数にする
-					$prop = parseProperty($id, $label, $cls, $prop);
+					$prop = $res = parseProperty($id, $label, $cls, $prop);
 
 					# $pclsはクラス間の従属関係なので、間にプロパティ定義が入る場合、クリアする
 					$pcls = "";
@@ -190,8 +194,8 @@ sub changeMode {
 		$mode = "O";
         $map = \@OMap;
 	}
-    # unknown
-    else {
+	# unknown
+	else {
 		$mode = "";
 		$map = "";
 		return;
