@@ -106,7 +106,7 @@ class App < Sinatra::Base
     zip = Tempfile.create(['converted', '.zip']).path
     logger.info("Reading #{files.inspect}")
     Dir.mktmpdir do |tmpdir|
-      Zip::File.open(zip, Zip::File::CREATE) do |zipfile|
+      Zip::File.open(zip, create: true) do |zipfile|
         index = {}
         JSONize(files, tmpdir, logger).each do |path|
           logger.info("Adding #{path}")
