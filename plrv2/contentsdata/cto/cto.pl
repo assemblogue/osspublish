@@ -507,17 +507,24 @@ sub parseLabelLang {
 
 		# localが無い
 		if (@elm == 1) {
-			$ll{''} = $elm[0] if ($elm[0] ne "");
+			$ll{''} = processPercent($elm[0]) if ($elm[0] ne "");
 		}
 		# localつき
 		elsif (@elm == 2) {
-			$ll{$elm[0]} = $elm[1] if ($elm[1]);
+			$ll{$elm[0]} = processPercent($elm[1]) if ($elm[1]);
 		}
 	}
 
 	if (%ll) {
 		$type->{$propName} = \%ll;
 	}
+}
+
+sub processPercent {
+    my ($str) = @_;
+    $str =~ s/^%//;
+
+    return $str;
 }
 
 sub parseClassIdParams {
