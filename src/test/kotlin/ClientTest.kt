@@ -218,7 +218,7 @@ class ClientTest {
 		val server = MockWebServer()
 		server.enqueue(MockResponse().setBody(buffer))
 		server.start()
-		val entries = convertUsingOnlineService("".toByteArray(), "testData", server.url("/convert/").toUrl())
+		val entries = convertUsingOnlineService("".toByteArray(), "testData", server.url("/convert/"))
 		assertEquals("{}", entries["index.json"]!!.trim())
 		server.shutdown()
 	}

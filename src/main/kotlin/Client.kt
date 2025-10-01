@@ -10,6 +10,8 @@ import com.assemblogue.plr.util.PROP_OSS_CONTAINERS
 import com.assemblogue.plr.util.PROP_OSS_ID
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -20,7 +22,6 @@ import kotlinx.coroutines.flow.*
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.InputStream
-import java.net.URL
 import java.security.MessageDigest
 import java.text.MessageFormat
 import java.time.Instant
@@ -204,7 +205,7 @@ class Client {
 			}
 		}
 
-		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: URL): Map<String, String> {
+		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: HttpUrl): Map<String, String> {
 			val client = OkHttpClient.Builder()
 				.connectTimeout(60000L, TimeUnit.MILLISECONDS)
 				.callTimeout(60000L, TimeUnit.MILLISECONDS)
@@ -360,13 +361,13 @@ class Client {
 								convertUsingOnlineService(
 									bytes,
 									findOntologyName(bytes) + ".xlsx",
-									URL(props.getProperty("plr.oss.endpoint"))
+									props.getProperty("plr.oss.endpoint").toHttpUrl()
 								)
 							}
 							arg.endsWith(".xlsx") || arg.endsWith(".csv") -> convertUsingOnlineService(
 								File(arg).readBytes(),
 								File(arg).name,
-								URL(props.getProperty("plr.oss.endpoint"))
+								props.getProperty("plr.oss.endpoint").toHttpUrl()
 							)
 							arg.endsWith(".zip") -> unzipFile(File(arg))
 							else -> {

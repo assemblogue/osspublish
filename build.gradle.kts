@@ -32,14 +32,14 @@ dependencies {
 	//compileOnly(files("$projectDir/libs/plr2_util.jar"))
 	implementation(kotlin("stdlib-jdk8"))
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-	implementation("com.fasterxml.jackson.core:jackson-databind:2.12.4")
-	implementation("com.squareup.okhttp3:okhttp:4.9.1")
-	implementation("org.apache.poi:poi:4.1.2")
-	implementation("org.apache.poi:poi-ooxml:4.1.2")
+	implementation("com.fasterxml.jackson.core:jackson-databind:2.17.3")
+	implementation("com.squareup.okhttp3:okhttp:5.1.0")
+	implementation("org.apache.poi:poi:5.4.0")
+	implementation("org.apache.poi:poi-ooxml:5.4.0")
 	implementation("com.assemblogue.plr:lib-generic:2.2.+")
 	testImplementation("org.junit.jupiter:junit-jupiter:5.7.2")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-	testRuntimeOnly("com.squareup.okhttp3:mockwebserver:4.9.1")
+	testImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
 }
 
 tasks {
