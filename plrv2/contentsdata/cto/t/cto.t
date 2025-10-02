@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 3;
+use Test::More tests => 5;
 
 sub run_command {
 	my $command = shift;
@@ -58,3 +58,30 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 						[sort ('#child', '#Nuclear-Family')],
 						'class name with hyphen');
 }
+
+{
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_abbrev1');
+  "]O Family ja:家族;Family",\オントロジー,,,
+  "Nuclear-Family ja:核家族;nuclear family|NF|"
+  EOD
+	my $p = json_file_to_perl("$dir/plrTest_abbrev1.jsonld");
+	my $val = $p->{'defines'}->[0]->{'abbrev'};
+	is_deeply($val,
+						{'' => 'NF'},
+						'abbrev');
+}
+
+{
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_abbrev2');
+  "]O Family ja:家族;Family",\オントロジー,,,
+  "Nuclear-Family ja:核家族;nuclear family|%|"
+  EOD
+	my $p = json_file_to_perl("$dir/plrTest_abbrev2.jsonld");
+	my $val = $p->{'defines'}->[0]->{'abbrev'};
+	is_deeply($val,
+						{'' => ''},
+						'empty abbrev');
+}
+
+done_testing();
+
