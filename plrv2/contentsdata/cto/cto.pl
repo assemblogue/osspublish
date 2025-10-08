@@ -62,7 +62,7 @@ sub checkReservedWord {
 # 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedClass {
     # 予約クラス
-    my @rsvcls = ("Channel", "DataSetting");
+    my @rsvcls = ("Channel", "DataSetting", "PlrId");
 
     return checkWord(\@rsvcls, $_);
 }
