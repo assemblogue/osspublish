@@ -40,6 +40,7 @@ dependencies {
 	testImplementation("org.junit.jupiter:junit-jupiter:5.7.2")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	testImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
+	testImplementation("org.mockito.kotlin:mockito-kotlin:4.1.0")
 }
 
 tasks {

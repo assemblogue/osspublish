@@ -1,5 +1,6 @@
 // -*- coding: utf-8 -*-
 
+import Client.Companion.authenticateAndGetStorage
 import Client.Companion.convertUsingOnlineService
 import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
@@ -8,6 +9,9 @@ import Client.Companion.normalizeOssId
 import Client.Companion.parseFileToUpload
 import Client.Companion.hasEmptyContent
 import Client.Companion.unzipInputStream
+import com.assemblogue.plr.io.Storage
+import com.assemblogue.plr.io.StorageInfo
+import com.assemblogue.plr.lib.PLR
 import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -17,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.*
 
 class ClientTest {
 	@Test
@@ -221,5 +226,30 @@ class ClientTest {
 		val entries = convertUsingOnlineService("".toByteArray(), "testData", server.url("/convert/"))
 		assertEquals("{}", entries["index.json"]!!.trim())
 		server.shutdown()
+	}
+
+	@Test
+	fun `forceAuthentication true calls newStorage even if storage exists`() {
+		val plr = mock<PLR>()
+		val storageinfo = mock<StorageInfo>()
+		val storage = mock<Storage>()
+
+		whenever(storageinfo.typeName).thenReturn("googleDrive")
+		whenever(storageinfo.userId).thenReturn("foobar@gmail.com")
+		whenever(plr.listStorages()).thenReturn(listOf(storageinfo))
+		whenever(plr.newStorage(any())).thenReturn(storage)
+
+		// when
+		val result = authenticateAndGetStorage(
+				plr = plr,
+				plrId = "googleDrive:foobar@gmail.com",
+				passphrase = "barbar",
+				forceAuthentication = true
+		)
+
+		// then
+		verify(plr).newStorage(any())
+		verify(plr, never()).connectStorage(any())
+		assert(result == storage)
 	}
 }
