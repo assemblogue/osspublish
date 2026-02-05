@@ -160,7 +160,7 @@ class Client {
 			return readLine()!!
 		}
 
-		fun authenticateAndGetStorage(plr: PLR, plrId: String, passphrase: String?): Storage? {
+		fun authenticateAndGetStorage(plr: PLR, plrId: String, passphrase: String?, forceAuthentication: Boolean): Storage? {
 			val (storageType, userId) = try {
 				plrId.split(":", limit = 2).let{ a -> Pair(a[0], a[1])}
 			} catch (e: IndexOutOfBoundsException) {
@@ -170,7 +170,7 @@ class Client {
 				x -> x.typeName == storageType && x.userId == userId
 			}
 			return try {
-				if (storages.isNotEmpty()) {
+				if (!forceAuthentication && storages.isNotEmpty()) {
 					plr.connectStorage(storages[0])
 				} else {
 					plr.newStorage(Storage.Type.byName(storageType))
@@ -331,11 +331,12 @@ class Client {
 			val plrId = props.getProperty("plr.id") ?: selectIdFromStorageList(plr)
 			val passphrase = props.getProperty("plr.passphrase")
 			val verbose = props.getProperty("verbose").toBoolean()
+			val authenticate = props.getProperty("plr.forceAuth").toBoolean()
 
 			println(res.format("using-endpoint-url", props.getProperty("plr.oss.endpoint")))
 
 			try {
-				val storage = authenticateAndGetStorage(plr, plrId, passphrase)!!
+				val storage = authenticateAndGetStorage(plr, plrId, passphrase, authenticate)!!
 				val root = plr.getPublicRoot(storage)
 				storage.searchNodeFiles()
 				root.syncAndWait()
