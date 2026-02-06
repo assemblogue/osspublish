@@ -26,10 +26,12 @@ java {
 application {
 	mainClass ="Client"
 	defaultTasks("run")
+	applicationDistribution.from(".") {
+		include("*.md")
+	}
 }
 
 dependencies {
-	//compileOnly(files("$projectDir/libs/plr2_util.jar"))
 	implementation(kotlin("stdlib-jdk8"))
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 	implementation("com.fasterxml.jackson.core:jackson-databind:2.17.3")
@@ -43,14 +45,6 @@ dependencies {
 	testImplementation("org.mockito.kotlin:mockito-kotlin:4.1.0")
 }
 
-tasks {
-	test {
-		useJUnitPlatform()
-		testLogging.showStandardStreams = true
-		testLogging.events("PASSED", "FAILED", "SKIPPED", "STANDARD_OUT", "STANDARD_ERROR")
-	}
-}
-
 kotlin {
 	compilerOptions {
 		jvmTarget.set(JvmTarget.JVM_1_8)
@@ -59,8 +53,8 @@ kotlin {
 	}
 }
 
-tasks.named<KotlinCompile>("compileTestKotlin") {
-	compilerOptions {
-		suppressWarnings.set(true)
-	}
+tasks.test {
+	useJUnitPlatform()
+	testLogging.showStandardStreams = true
+	testLogging.events("PASSED", "FAILED", "SKIPPED", "STANDARD_OUT", "STANDARD_ERROR")
 }
