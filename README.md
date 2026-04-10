@@ -1,6 +1,7 @@
 ## Running locally
 
-rackup
+bundle install
+bundle exec puma
 
 ## Running locally as a container
 
