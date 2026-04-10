@@ -51,3 +51,4 @@ config.properties ファイルに下記のような内容を用意してくだ�
   
 - 初回更新後に `EntryNotFoundException` が表示される場合は、おそらく作成自体は成功しています。
 - タイムアウトが表示される場合、しばらく待ってからもう一度試してみてください。
+- 認証エラーが続く場合、config.propertiesファイルに plr.forceAuth=true と書くと認証をやり直せます。
