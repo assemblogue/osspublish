@@ -71,6 +71,8 @@ end
 
 # main class App
 class App < Sinatra::Base
+  disable :sessions
+
   configure do
     set :server, :puma
   end
