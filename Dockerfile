@@ -1,20 +1,22 @@
-FROM docker.io/ruby:3.2.7 AS base
+FROM docker.io/ruby:3.4.9 AS base
 WORKDIR /usr/src/myapp
 ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
-COPY Gemfile Gemfile.lock ./
-RUN bundle config build.nokogiri --use-system-libraries
-RUN bundle install
 ENV PERL5LIB=/opt/perl5/lib/perl5
 RUN curl -L https://cpanmin.us | perl - App::cpanminus
 RUN cpanm --notest -L /opt/perl5 Text::CSV_XS JSON
+COPY Gemfile Gemfile.lock ./
+RUN bundle config set --local without 'test'
+RUN bundle install
 COPY . /usr/src/myapp
 
 FROM base AS test
 RUN cpanm --notest -L /opt/perl5 JSON::Parse
+RUN bundle config set --local without ''
+RUN bundle install
 CMD ./run_server_tests.sh
 
-FROM docker.io/ruby:3.2.7-slim AS prod
+FROM docker.io/ruby:3.4.9-slim AS prod
 ENV PERL5LIB=/opt/perl5/lib/perl5
 WORKDIR /app
 COPY --from=base /usr/local/bundle /usr/local/bundle
