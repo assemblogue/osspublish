@@ -1,11 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 repositories {
 	gradlePluginPortal()
 	maven(url = uri("https://www.assemblogue.com/m2repository/"))
-	maven(url = uri("https://jitpack.io/")) // for com.github.kittinunf.result:result:2.2.0.
+	maven(url = uri("https://jitpack.io/")) // for com.github.kittinunf.result:result:2.2.0, which is for plr library
 }
 
 plugins {
@@ -32,7 +31,6 @@ application {
 }
 
 dependencies {
-	implementation(kotlin("stdlib-jdk8"))
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 	implementation("com.fasterxml.jackson.core:jackson-databind:2.17.3")
 	implementation("com.squareup.okhttp3:okhttp:5.1.0")
