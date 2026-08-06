@@ -4,3 +4,7 @@
 *.bak
 *.org
 build/
+.bundle/
+.prj/
+.yardoc/
+.ruby-version
