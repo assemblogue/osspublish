@@ -38,13 +38,16 @@ sub parseInput {
     while (my $fields = $csv->getline(*STDIN)) {
 		$lc++;
 
+		# $own: この行に書かれた最初のカラム（それより左は前の行から引き継いだもの）
+		my $own = 0;
 		for (my $i = 0; $i < @$fields; $i++) {
 			last if ($$fields[$i]);
 			$$fields[$i] = $$lastFields[$i];
+			$own = $i + 1;
 		}
 		$lastFields = $fields;
 
-		extract($fields, $lc);
+		extract($fields, $lc, $own);
     }
 }
 
@@ -87,9 +90,11 @@ sub checkWord {
 #     プロパティなら、サブプロパティ
 #　となる。
 sub extract {
-    my ($fields, $lc) = @_;
+    my ($fields, $lc, $own) = @_;
 
     my $pcls="", $cls="", $prop="", $res;
+	# "| 属性" カラムの直後のカラム番号と、その属性
+	my $valueCol = -1, $valueProp = "";
 
 	# 自動生成クラスカウンタ
 	$autoClassCount = 0;
@@ -105,6 +110,13 @@ sub extract {
 
 		next unless ($_);
 
+		if ($autoClassCount - 1 == $valueCol) {
+			# "| 属性" の右隣のカラム：直近のクラスのその属性の値
+			setClassPropertyValue($cls, $valueProp, $_);
+			$valueCol = -1;
+			next;
+		}
+
 		if (/^\\.*/) {
 			#コメントカラム
 			$res = undef;
@@ -116,7 +128,15 @@ sub extract {
 		}
 		elsif ($mode eq "O") {
 			# オントロジー定義のみ扱う
-			if (checkReservedClass($_)) {
+			if (/^\|\s*(\S+)/) {
+				# "| 属性"：右隣のカラムが、直近のクラスのその属性の値
+				# 前の行から引き継いだカラムなら扱わない（値を二度書かないため）
+				if ($autoClassCount - 1 >= $own) {
+					die("Error: `| $1' without class at line $lc\n") unless ($cls);
+					$valueCol = $autoClassCount;
+					$valueProp = $1;
+				}
+			} elsif (checkReservedClass($_)) {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
@@ -253,6 +273,20 @@ sub parseClass {
 	$typeMap{$id} = $cls;
 
     return $cls;
+}
+
+# クラスの属性に値を書く（"| 属性" の右隣のカラム）
+# 属性が ObjectProperty なら値はクラス等の ID、それ以外は文字列
+sub setClassPropertyValue {
+	my ($cls, $propId, $val) = @_;
+
+	my $p = $typeMap{"#$propId"};
+	if ($p && $p->{'@type'} eq "ObjectProperty") {
+		$val =~ s/^#//;
+		$cls->{$propId} = { '@id' => "#$val" };
+	} else {
+		$cls->{$propId} = $val;
+	}
 }
 
 # subClassOf にスーパークラスを追加

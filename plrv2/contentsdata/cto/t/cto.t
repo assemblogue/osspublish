@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 4;
+use Test::More tests => 6;
 
 sub run_command {
 	my $command = shift;
@@ -72,6 +72,26 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 		'range' => 'PlrId',
 		'@id' => '#child'
 	}, 'reserved class');
+}
+
+{
+	# "| 属性" の右隣のカラムは、直近のクラスのその属性の値
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_classvalue');
+	"]O Calc ja:計算;Calc",\オントロジー,,,
+	Atom,builtInFunction(1,string,,
+	,compensatesWith=1,Atom,,
+	Constraint,,,,
+	,Equal =,| builtInFunction,Equal,
+	,Undo,,,
+	,Order,| compensatesWith,Undo,
+	,,,Other,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_classvalue.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is($d{'#Equal'}->{'builtInFunction'}, 'Equal', 'class property value (string)');
+	# ObjectProperty の値は ID。前の行から引き継いだ "| 属性" は値を書き直さない
+	is_deeply($d{'#Order'}->{'compensatesWith'}, {'@id' => '#Undo'},
+						'class property value (object), not overwritten by carried column');
 }
 
 done_testing();
