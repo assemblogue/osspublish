@@ -18,6 +18,8 @@ die("usage: cto.pl ontologyName prefix")
 # OMapブロック管理用
 #
 my @types, %typeMap, @OMap;
+# "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
+my @classValues;
 my $mode;
 
 
@@ -27,6 +29,7 @@ my $autoClassCount = 0;
 
 MAIN: {
     parseInput();
+    resolveClassPropertyValues();
     outputOntology($ARGV[0], $ARGV[1]);
 }
 
@@ -95,6 +98,8 @@ sub extract {
     my $pcls="", $cls="", $prop="", $res;
 	# "| 属性" カラムの直後のカラム番号と、その属性
 	my $valueCol = -1, $valueProp = "";
+	# 前の行から引き継いだ "| 属性" カラムの直後のカラム番号
+	my $carriedValueCol = -1;
 
 	# 自動生成クラスカウンタ
 	$autoClassCount = 0;
@@ -108,14 +113,21 @@ sub extract {
 		}
 		last if ($lf && ($autoClassCount >= $lf));
 
-		next unless ($_);
+		if ($autoClassCount - 1 == $carriedValueCol && $autoClassCount - 1 < $own) {
+			# 前の行から引き継いだ "| 属性" の値：その行で書いたので、もう扱わない
+			next;
+		}
 
 		if ($autoClassCount - 1 == $valueCol) {
-			# "| 属性" の右隣のカラム：直近のクラスのその属性の値
-			setClassPropertyValue($cls, $valueProp, $_);
+			# "| 属性" の右隣のカラム：直近のクラスのその属性の値（"0" も値）
+			die("Error: no value for `| $valueProp' at line $lc\n")
+				unless (defined($_) && $_ ne '');
+			push(@classValues, [$cls, $valueProp, $_, $lc]);
 			$valueCol = -1;
 			next;
 		}
+
+		next unless ($_);
 
 		if (/^\\.*/) {
 			#コメントカラム
@@ -135,6 +147,8 @@ sub extract {
 					die("Error: `| $1' without class at line $lc\n") unless ($cls);
 					$valueCol = $autoClassCount;
 					$valueProp = $1;
+				} else {
+					$carriedValueCol = $autoClassCount;
 				}
 			} elsif (checkReservedClass($_)) {
 				my ($id) = split(/[ \n]+/, $_, 2);
@@ -185,6 +199,7 @@ sub extract {
 			# print Dumper %typeMap;
 		}
     }
+	die("Error: no value for `| $valueProp' at line $lc\n") if ($valueCol >= 0);
 }
 
 
@@ -275,17 +290,22 @@ sub parseClass {
     return $cls;
 }
 
-# クラスの属性に値を書く（"| 属性" の右隣のカラム）
-# 属性が ObjectProperty なら値はクラス等の ID、それ以外は文字列
-sub setClassPropertyValue {
-	my ($cls, $propId, $val) = @_;
+# クラスの属性に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
+# （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。
+# 属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる
+sub resolveClassPropertyValues {
+	foreach my $cv (@classValues) {
+		my ($cls, $propId, $val, $line) = @$cv;
 
-	my $p = $typeMap{"#$propId"};
-	if ($p && $p->{'@type'} eq "ObjectProperty") {
-		$val =~ s/^#//;
-		$cls->{$propId} = { '@id' => "#$val" };
-	} else {
-		$cls->{$propId} = $val;
+		my $p = $typeMap{"#$propId"};
+		die("Error: undefined property `$propId' in `| $propId' at line $line\n")
+			unless ($p);
+		if ($p->{'@type'} eq "ObjectProperty") {
+			$val =~ s/^#//;
+			$cls->{$propId} = { '@id' => "#$val" };
+		} else {
+			$cls->{$propId} = valueOfRange($p->{'range'}, $val);
+		}
 	}
 }
 
@@ -818,17 +838,7 @@ sub parsePropertyParams {
 			}
 		} elsif ($sym eq "!") {
 			# defaultValue.
-			if ($range eq "boolean") {
-				if (lc($val) eq "true") {
-					$prop->{'defaultValue'} = JSON::true;
-				} else {
-					$prop->{'defaultValue'} = JSON::false;
-				}
-			} elsif (($range eq "decimal") || ($range =~ /integer$/i)) {
-				$prop->{'defaultValue'} = numValue($val);
-			} else {
-				$prop->{'defaultValue'} = $val;
-			}
+			$prop->{'defaultValue'} = valueOfRange($range, $val);
 		} elsif ($sym eq "(") {
 			$prop->{'maxInclusive'} = numValue($val);
 		} elsif ($sym eq "<") {
@@ -850,6 +860,18 @@ sub parsePropertyParams {
     ## $typeMap{$prop_id} = $prop;
 
 	return $prop;
+}
+
+# 値域に合わせた値（真偽値・数はその型、それ以外は文字列）
+sub valueOfRange {
+	my ($range, $val) = @_;
+
+	if ($range eq "boolean") {
+		return (lc($val) eq "true") ? JSON::true : JSON::false;
+	} elsif (($range eq "decimal") || ($range =~ /integer$/i)) {
+		return numValue($val);
+	}
+	return $val;
 }
 
 sub numValue {
