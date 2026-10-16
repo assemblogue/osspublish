@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 4;
+use Test::More tests => 12;
 
 sub run_command {
 	my $command = shift;
@@ -72,6 +72,81 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 		'range' => 'PlrId',
 		'@id' => '#child'
 	}, 'reserved class');
+}
+
+{
+	# "| 属性" の右隣のカラムは、直近のクラスのその属性の値
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_classvalue');
+	"]O Calc ja:計算;Calc",\オントロジー,,,
+	Atom,builtInFunction(1,string,,
+	,compensatesWith=1,Atom,,
+	Constraint,,,,
+	,Equal =,| builtInFunction,Equal,
+	,Undo,,,
+	,Order,| compensatesWith,Undo,
+	,,,Other,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_classvalue.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is($d{'#Equal'}->{'builtInFunction'}, 'Equal', 'class property value (string)');
+	# ObjectProperty の値は ID。前の行から引き継いだ "| 属性" は値を書き直さない
+	is_deeply($d{'#Order'}->{'compensatesWith'}, {'@id' => '#Undo'},
+						'class property value (object), not overwritten by carried column');
+}
+
+{
+	# 属性の定義が値より後の行にあっても、ObjectProperty なら ID にする
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_classvalue_later');
+	"]O Calc ja:計算;Calc",\オントロジー,,,
+	Constraint,,,,
+	,Order,| compensatesWith,Undo,
+	,Undo,,,
+	Atom,compensatesWith=1,Atom,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_classvalue_later.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#Order'}->{'compensatesWith'}, {'@id' => '#Undo'},
+						'class property value (object), property defined later');
+}
+
+{
+	# 値域が数なら数で書く（"0" も値）
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_classvalue_number');
+	"]O Calc ja:計算;Calc",\オントロジー,,,
+	Atom,count(1,integer,,
+	Constraint,,,,
+	,Zero,| count,0,
+	EOD
+	open(my $f, '<', "$dir/plrTest_classvalue_number.jsonld") or die "$!";
+	my $text = do { local $/; <$f> };
+	like($text, qr/"count"\s*:\s*0\b/, 'class property value "0" as a number');
+}
+
+{
+	# 前の行から引き継いだ値のカラムは、属性やクラスとして読み直さない
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_classvalue_carried');
+	"]O Calc ja:計算;Calc",\オントロジー,,,,
+	Atom,builtInFunction(1,string,,,
+	Constraint,,,,,
+	,Equal =,| builtInFunction,equal,,
+	,,,,Deeper,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_classvalue_carried.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	ok(!exists($d{'#equal'}), 'carried value column is not read as a property');
+}
+
+# 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
+foreach my $case (
+	['plrTest_classvalue_undef', ",Typo,| cuont,X,\n", 'undefined property'],
+	['plrTest_classvalue_empty', ",Empty,| count,,\n", 'empty value'],
+	['plrTest_classvalue_last', ",Last,| count\n", '"| property" as the last column'],
+) {
+	my ($prefix, $row, $name) = @$case;
+	run_command('cto.pl',
+		"\"]O Calc ja:計算;Calc\",\\オントロジー,,,\nAtom,count(1,integer,,\nConstraint,,,,\n$row",
+		$dir, $prefix);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 
 done_testing();
