@@ -150,7 +150,10 @@ sub extract {
 				} else {
 					$carriedValueCol = $autoClassCount;
 				}
-			} elsif (checkReservedClass($_)) {
+			} elsif (($autoClassCount > 1) && checkReservedClass($_)) {
+				# 予約クラスは値域の欄にだけ書く特別な型。A 列（1番目）はクラスの
+				# 宣言なので、予約クラスと同じ名前でも、ふつうのクラスとして読む
+				# （osspublish#3。前は前の行の属性の値域の続きとして読んでいた）
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
