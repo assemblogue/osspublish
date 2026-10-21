@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 15;
+use Test::More tests => 17;
 
 sub run_command {
 	my $command = shift;
@@ -150,19 +150,23 @@ foreach my $case (
 }
 
 {
-	# A 列のクラスの宣言としての予約クラス名（ラベル付き）は、ふつうのクラス
-	# として読む。前の行の属性の値域の続きとして読まない（osspublish#3）
+	# A 列の予約クラス名（ラベル付きでも）は組込みのクラスを指す。宣言せず、
+	# 続く属性の domain にする。前の行の属性の値域の続きとして読まない（osspublish#3）
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_reserved_decl');
 	"]O Family ja:家族;Family",\オントロジー,,,
 	"Task ja:タスク;Task",,,
 	,"notificationLeadTime ja:通知リードタイム;notification lead time",duration,,
 	"Channel ja:チャネル;Channel",channelSetting,,,
+	DataSetting,dataSettingNote,string,,
 	EOD
 	my $p = json_file_to_perl("$dir/plrTest_reserved_decl.jsonld");
 	my %byId = map { ($_->{'@id'} // '') => $_ } @{$p->{'defines'}};
 	is($byId{'#notificationLeadTime'}->{'range'}, 'duration', 'range of the property on the previous row is kept');
-	is($byId{'#Channel'}->{'@type'}, 'Class', 'Channel in column A is declared as a class');
-	is($byId{'#channelSetting'}->{'domain'}, '#Channel', 'property after it belongs to Channel');
+	ok(!exists($byId{'#Channel'}) && !exists($byId{'Channel'}), 'Channel in column A is not declared');
+	is($byId{'#channelSetting'}->{'domain'}, 'Channel', 'property after it belongs to the built-in Channel');
+	is($byId{'#dataSettingNote'}->{'domain'}, 'DataSetting', 'property after DataSetting belongs to the built-in DataSetting');
+	my $c = json_file_to_perl("$dir/plrTest_reserved_declContext.jsonld");
+	ok(!exists($c->{'@context'}->[1]->{'Channel'}), 'Channel is not in the context');
 }
 
 done_testing();

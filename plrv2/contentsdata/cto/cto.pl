@@ -150,10 +150,13 @@ sub extract {
 				} else {
 					$carriedValueCol = $autoClassCount;
 				}
+			} elsif (($autoClassCount == 1) && checkReservedClass($_)) {
+				# A 列の予約クラスは、組込みのクラス（PLR の Channel など）を指す。
+				# 宣言はせず、続く欄の属性をそのクラスの属性にする（domain は値域と
+				# 同じく # を付けない）。ラベルは組込みのものを使うので読まない（osspublish#3）
+				$cls = $res = builtinClass(checkReservedClass($_));
+				$pcls = $cls;
 			} elsif (($autoClassCount > 1) && checkReservedClass($_)) {
-				# 予約クラスは値域の欄にだけ書く特別な型。A 列（1番目）はクラスの
-				# 宣言なので、予約クラスと同じ名前でも、ふつうのクラスとして読む
-				# （osspublish#3。前は前の行の属性の値域の続きとして読んでいた）
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
@@ -260,6 +263,13 @@ sub changeMode {
 }
 
 #　クラス解析
+# 組込みのクラス（予約クラス）。@types にも Context にも出さない
+sub builtinClass {
+    my ($id) = @_;
+
+    return { '@id' => $id, 'builtin' => 1 };
+}
+
 sub parseClass {
     my ($idParams, $label, $pcls) = @_;
 
@@ -687,6 +697,14 @@ sub parsePropertyIdParams {
 			$restriction{$n} = $num + 0;
 		}
     }
+
+	if ($cls->{'builtin'}) {
+		# 組込みのクラスには制約を書き足せない
+		print STDERR "Warning: Restriction on property `$id' of built-in class " .
+			"`$cls->{'@id'}' is ignored at line $lc\n"
+			if (keys(%restriction) > 2);
+		return 0;
+	}
 
 	# 常に [ ] とする
     my $scof = $cls->{'subClassOf'};
