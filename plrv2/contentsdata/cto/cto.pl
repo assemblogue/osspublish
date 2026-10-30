@@ -10,7 +10,10 @@ use JSON;
 use Encode qw/encode_utf8 decode_utf8/;
 use Data::Dumper;
 
-die("usage: cto.pl ontologyName prefix")
+# 3つ目からの引数は、系のオントロジー（plrDart の sample/system の Ontology.jsonld・
+# Base.jsonld など）の JSON-LD。linkPath の道に書いた属性が系で定義されているかを、
+# ここから集めた属性の ID で確かめる（isSystemProperty）。無ければシートの中だけで確かめる
+die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
     if (@ARGV < 2);
 
 #
@@ -20,6 +23,8 @@ die("usage: cto.pl ontologyName prefix")
 my @types, %typeMap, @OMap;
 # "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
 my @classValues;
+# 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
+my %systemProps;
 my $mode;
 
 
@@ -28,6 +33,7 @@ my $mode;
 my $autoClassCount = 0;
 
 MAIN: {
+    readSystemOntologies(@ARGV[2 .. $#ARGV]);
     parseInput();
     resolveClassPropertyValues();
     outputOntology($ARGV[0], $ARGV[1]);
@@ -75,35 +81,32 @@ sub isReservedProperty {
     return scalar(grep { $_ eq $id } @rsvprop);
 }
 
-# 系（plrDart の sample/system の Ontology.jsonld・Base.jsonld）で定義されている属性の
-# チェック。linkPath の道に書けるのは、シートか系で定義されている属性だけである。
-# 系のオントロジーに属性を足したら、ここにも足す
+# 系のオントロジーの JSON-LD のファイル [@files] を読み、定義されている属性
+# （@type が Class でないもの）の ID を %systemProps に集める
+sub readSystemOntologies {
+	my @files = @_;
+	foreach my $file (@files) {
+		die("Error: failed to open system ontology `$file': $!\n")
+			unless (open(my $f, '<:raw', $file));
+		my $text = do { local $/; <$f> };
+		close($f);
+		my $o = eval { JSON->new->utf8->decode($text) };
+		die("Error: failed to read system ontology `$file': $@\n")
+			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
+		foreach my $d (@{$o->{'defines'}}) {
+			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
+			next if (($d->{'@type'} // '') eq 'Class');
+			(my $id = $d->{'@id'}) =~ s/^#//;
+			$systemProps{$id} = 1;
+		}
+	}
+}
+
+# 系（readSystemOntologies で読んだオントロジー）で定義されている属性のチェック。
+# linkPath の道に書けるのは、シートか系で定義されている属性だけである
 sub isSystemProperty {
 	my ($id) = @_;
-	my @sysprop = (
-		"agent", "arg1", "arg2", "assistance", "begin", "beginTime", "channel",
-		"channelSetting", "channels", "cnt", "complete", "completeByOkButton",
-		"completeOrSuspendByOkButton", "conjSubTask", "constituent", "content", "count",
-		"creator", "disjSubTask", "disjunction", "duration10minutes", "duration1hour",
-		"duration20minutes", "duration30minutes", "durationValue", "editor", "end",
-		"existence", "existing", "faAggregation", "faCommon", "faIndividual", "field",
-		"fieldArgument", "fieldNode", "fieldProperty", "im", "inChannel", "index",
-		"isComplete", "next", "notificationLeadTime", "okButton", "once", "onto", "onto0",
-		"onto1", "onto10", "onto2", "onto200", "onto201", "onto202", "onto210", "onto211",
-		"onto212", "onto220", "onto221", "onto222", "onto230", "onto231", "onto232",
-		"onto240", "onto241", "onto242", "onto250", "onto251", "onto252", "onto260",
-		"onto261", "onto262", "onto270", "onto271", "onto272", "onto3", "onto30", "onto31",
-		"onto32", "onto33", "onto34", "onto35", "onto4", "onto5", "onto6", "onto7", "onto8",
-		"onto80", "onto81", "onto82", "onto9", "ontoA", "ontoC", "ontoCC", "ontoChS",
-		"ontoCs", "ontoD", "ontoEC", "ontoER", "ontoFMT", "ontoG", "ontoID", "ontoR",
-		"ontoR00", "ontoR01", "ontoRU", "operand1", "operand2", "percentage", "person",
-		"plusMinus3", "plusMinus4", "plusMinus5", "pullBack", "reactionPN", "refersTo",
-		"retrieve", "reusable", "sensitive", "setting", "state", "task", "taskAgent",
-		"taskEditor", "taskUser", "title", "truthValue", "valCm", "valDecimal",
-		"valNaturalNumber", "weightVal"
-	);
-
-	return scalar(grep { $_ eq $id } @sysprop);
+	return exists($systemProps{$id});
 }
 
 # 予約クラスのチェック

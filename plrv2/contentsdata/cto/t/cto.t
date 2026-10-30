@@ -4,14 +4,15 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 26;
+use Test::More tests => 28;
 
 sub run_command {
 	my $command = shift;
 	my $content = shift;
 	my $dir = shift;
 	my $prefix = shift;
-	my $pid = open2(my $child_in, my $child_out, "$^X ./$command $dir/$prefix $prefix") or die "$!";
+	# 残りの引数は系のオントロジーのファイル
+	my $pid = open2(my $child_in, my $child_out, join(' ', "$^X ./$command $dir/$prefix $prefix", @_)) or die "$!";
 	print $child_out $content;
 	close $child_in;
 	close $child_out;
@@ -20,6 +21,16 @@ sub run_command {
 }
 
 my $dir = tempdir('/tmp/plrtest_XXXX');
+
+# 系のオントロジー（linkPath の道の属性を確かめるのに渡す。plrDart の
+# sample/system/Ontology.jsonld の形を小さくしたもの）
+my $systemOntology = "$dir/plrTest_system.jsonld";
+{
+	open(my $f, '>', $systemOntology) or die "$!";
+	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
+		. ' {"@id": "#Constraint", "@type": "Class"}]}';
+	close($f);
+}
 
 {
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_hyphen');
@@ -155,8 +166,9 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 {
 	# 系の予約属性 linkPath（plrDart の追記R971）：arg1 から arg2 へたどる属性の ID を
 	# 空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では # 付きの ID の
-	# 歩みの @list にする。道の属性は、シートか系で定義されているもの
-	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path');
+	# 歩みの @list にする。道の属性は、シートか、引数で渡した系のオントロジーで
+	# 定義されているもの
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path', $systemOntology);
 	"]O DG ja:議論;DG",\オントロジー,,,
 	Issue,conjSubIssue,Issue,,
 	Answer,isTrue,boolean,,
@@ -182,15 +194,18 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	ok(!exists($d{'#linkPath'}), 'linkPath is not declared');
 }
 
-# linkPath の道に、定義の無い属性やクラスを書くとエラー（出力を作らない）
+# linkPath の道に、定義の無い属性やクラスを書くとエラー（出力を作らない）。系の
+# オントロジーを渡さなければ、系の属性も定義の無い属性になる
 foreach my $case (
-	['plrTest_link_path_undef', ",Typo,| linkPath,truthValue -conjSubIsue,\n", 'undefined property in linkPath'],
-	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath'],
+	['plrTest_link_path_undef', ",Typo,| linkPath,truthValue -conjSubIsue,\n", 'undefined property in linkPath', $systemOntology],
+	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath', $systemOntology],
+	['plrTest_link_path_sysclass', ",SysCls,| linkPath,Constraint,\n", 'system class in linkPath', $systemOntology],
+	['plrTest_link_path_nosys', ",Sys,| linkPath,truthValue,\n", 'system property without the system ontology'],
 ) {
-	my ($prefix, $row, $name) = @$case;
+	my ($prefix, $row, $name, @system) = @$case;
 	run_command('cto.pl',
 		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
-		$dir, $prefix);
+		$dir, $prefix, @system);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 
