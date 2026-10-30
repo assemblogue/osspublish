@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 27;
+use Test::More tests => 34;
 
 sub run_command {
 	my $command = shift;
@@ -202,6 +202,47 @@ foreach my $case (
 	run_command('cto.pl',
 		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
 		$dir, $prefix, @system);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+
+{
+	# 系の予約属性 elementProperty・elementTransitive（plrDart の追記R974）：
+	# 要素を持つ属性の ID（シートか系の属性）は {"@id": "#…"} に、入れ子を
+	# たどるかは真偽値にする
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_element', $systemOntology);
+	"]O Org ja:組織;Org",\オントロジー,,,
+	Group,groupMember,Person,,
+	,NestedGroup,| elementProperty,groupMember,
+	,,| elementTransitive,TRUE,
+	,FlatGroup,| elementProperty,#truthValue,
+	,,| elementTransitive,false,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_element.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply([$d{'#NestedGroup'}->{'#elementProperty'}, $d{'#FlatGroup'}->{'#elementProperty'}],
+						[{'@id' => '#groupMember'}, {'@id' => '#truthValue'}],
+						'elementProperty is the id of a sheet or system property');
+	ok($d{'#NestedGroup'}->{'#elementTransitive'} && !$d{'#FlatGroup'}->{'#elementTransitive'},
+		 'elementTransitive is a boolean');
+	open(my $f, '<', "$dir/plrTest_element.jsonld") or die "$!";
+	my $text = do { local $/; <$f> };
+	like($text, qr/"#elementTransitive"\s*:\s*true\b.*"#elementTransitive"\s*:\s*false\b|"#elementTransitive"\s*:\s*false\b.*"#elementTransitive"\s*:\s*true\b/s,
+			 'elementTransitive is written as JSON true and false');
+	ok(!exists($d{'#elementProperty'}) && !exists($d{'#elementTransitive'}),
+		 'elementProperty and elementTransitive are not declared');
+}
+
+# elementProperty に定義の無い属性やクラス、elementTransitive に真偽値でないものを
+# 書くとエラー（出力を作らない）
+foreach my $case (
+	['plrTest_element_undef', ",Typo,| elementProperty,groupMembr,\n", 'undefined property in elementProperty'],
+	['plrTest_element_class', ",Cls,| elementProperty,Group,\n", 'class in elementProperty'],
+	['plrTest_element_bool', ",Bad,| elementTransitive,yes,\n", 'non-boolean elementTransitive'],
+) {
+	my ($prefix, $row, $name) = @$case;
+	run_command('cto.pl',
+		"\"]O Org ja:組織;Org\",\\オントロジー,,,\nGroup,groupMember,Person,,\n$row",
+		$dir, $prefix, $systemOntology);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 

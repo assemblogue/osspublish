@@ -71,12 +71,12 @@ sub checkReservedWord {
 }
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
-# 無くても書く（予約クラスと同じく、宣言は系の側にある）。builtInFunction は文字列、
-# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）
+# 無くても書く（予約クラスと同じく、宣言は系の側にある）。値の形は
+# reservedPropertyValue が決める
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction", "linkPath");
+    my @rsvprop = ("builtInFunction", "linkPath", "elementProperty", "elementTransitive");
 
     return scalar(grep { $_ eq $id } @rsvprop);
 }
@@ -362,8 +362,7 @@ sub resolveClassPropertyValues {
 		unless ($p) {
 			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
 				unless (isReservedProperty($propId));
-			$cls->{"#$propId"} = ($propId eq "linkPath")
-				? resolveLinkPath($val, $line) : $val;
+			$cls->{"#$propId"} = reservedPropertyValue($propId, $val, $line);
 			next;
 		}
 		if ($p->{'@type'} eq "ObjectProperty") {
@@ -373,6 +372,40 @@ sub resolveClassPropertyValues {
 			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
+}
+
+# 系の予約属性 [$propId] の値 [$val] を、書き出す形にする：
+# * builtInFunction：文字列のまま
+# * linkPath：属性の道（resolveLinkPath。plrDart の追記R971・R972）
+# * elementProperty：要素を持つ属性の ID（{"@id": "#…"}。plrDart の追記R974）。
+#   シートか系で定義されていなければエラー
+# * elementTransitive：入れ子をたどるか（真偽値。plrDart の追記R974）。
+#   true・false（大文字小文字は問わない）のほかはエラー
+sub reservedPropertyValue {
+	my ($propId, $val, $line) = @_;
+	if ($propId eq "linkPath") {
+		return resolveLinkPath($val, $line);
+	} elsif ($propId eq "elementProperty") {
+		(my $id = $val) =~ s/^\s+|\s+$//g;
+		$id =~ s/^#//;
+		die("Error: undefined property `$id' in `| elementProperty' at line $line\n")
+			unless (isDefinedProperty($id));
+		return { '@id' => "#$id" };
+	} elsif ($propId eq "elementTransitive") {
+		(my $b = lc($val)) =~ s/^\s+|\s+$//g;
+		return JSON::true if ($b eq "true");
+		return JSON::false if ($b eq "false");
+		die("Error: `| elementTransitive' must be true or false, not `$val' at line $line\n");
+	}
+	return $val;
+}
+
+# 属性 [$id]（# を外したもの）が、シートか系（isSystemProperty）で定義されているか。
+# クラスの ID は属性ではない
+sub isDefinedProperty {
+	my ($id) = @_;
+	my $p = $typeMap{"#$id"};
+	return (($p && $p->{'@type'} ne "Class") || isSystemProperty($id));
 }
 
 # linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
@@ -388,9 +421,8 @@ sub resolveLinkPath {
 		next if ($s eq '');
 		my $inverse = ($s =~ s/^-//);
 		$s =~ s/^#//;
-		my $p = $typeMap{"#$s"};
 		die("Error: undefined property `$s' in `| linkPath' at line $line\n")
-			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
+			unless (isDefinedProperty($s));
 		my $step = { '@id' => "#$s" };
 		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
 	}
