@@ -25,6 +25,8 @@ my @types, %typeMap, @OMap;
 my @classValues;
 # 系のオントロジーで定義されている属性（# を外した ID → 定義）。readSystemOntologies が集める
 my %systemProps;
+# 系のオントロジーで定義されている ID（クラスも属性も。# を外したもの）
+my %systemIds;
 my $mode;
 
 
@@ -95,8 +97,9 @@ sub readSystemOntologies {
 			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
 		foreach my $d (@{$o->{'defines'}}) {
 			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
-			next if (($d->{'@type'} // '') eq 'Class');
 			(my $id = $d->{'@id'}) =~ s/^#//;
+			$systemIds{$id} = 1;
+			next if (($d->{'@type'} // '') eq 'Class');
 			$systemProps{$id} = $d;
 		}
 	}
@@ -379,11 +382,45 @@ sub resolveClassPropertyValues {
 		}
 		if ($p->{'@type'} eq "ObjectProperty") {
 			$val =~ s/^#//;
+			checkObjectValue($p, $propId, $val, $line);
 			$cls->{"#$propId"} = { '@id' => "#$val" };
 		} else {
 			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
+}
+
+# ObjectProperty [$p]（"| $propId"）の値 [$val]（# を外した ID）を確かめる——書き違い
+# （"_onto34" など）で止める：
+# * 値は、シートか系で定義されていなければならない
+# * 属性の値域が選択肢のクラス（setRangeClass が作る _AutomaticGeneration_…_SelectorClass）
+#   なら、値はその選択肢（その下位のクラス）でなければならない。ほかの値域（compensatesWith
+#   の ONTO1 など、値がクラスそのものであるもの）では、下位かを見ない
+sub checkObjectValue {
+	my ($p, $propId, $val, $line) = @_;
+	die("Error: undefined value `$val' for `| $propId' at line $line\n")
+		unless ($typeMap{"#$val"} || $systemIds{$val});
+	(my $range = $p->{'range'} // '') =~ s/^#//;
+	return unless ($range =~ /^_AutomaticGeneration_.*_SelectorClass$/ && $typeMap{"#$range"});
+	die("Error: `$val' is not in the range `$range' of `| $propId' at line $line\n")
+		unless (isSubClassOrSelf("#$val", "#$range"));
+}
+
+# クラス [$id] が [$super] か、その下位（subClassOf をたどる。シートの定義だけを見る）か
+sub isSubClassOrSelf {
+	my ($id, $super) = @_;
+	my %seen;
+	my @queue = ($id);
+	while (@queue) {
+		my $c = shift(@queue);
+		next if ($seen{$c}++);
+		return 1 if ($c eq $super);
+		my $cls = $typeMap{$c} or next;
+		foreach my $s (@{$cls->{'subClassOf'} || []}) {
+			push(@queue, $s->{'@id'}) if (ref($s) eq 'HASH' && $s->{'@id'});
+		}
+	}
+	return 0;
 }
 
 # 系の予約属性 [$propId] の値 [$val] を、書き出す形にする：

@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 38;
+use Test::More tests => 42;
 
 sub run_command {
 	my $command = shift;
@@ -29,6 +29,7 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 	open(my $f, '>', $systemOntology) or die "$!";
 	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
 		. ' {"@id": "#onto34", "@type": "ObjectProperty"},'
+		. ' {"@id": "#_onto340", "@type": "Class"}, {"@id": "#_onto342", "@type": "Class"},'
 		. ' {"@id": "#Constraint", "@type": "Class"}]}';
 	close($f);
 }
@@ -276,6 +277,34 @@ foreach my $case (
 	my ($prefix, $row, $name, @system) = @$case;
 	run_command('cto.pl',
 		"\"]O W ja:作業場;W\",\\オントロジー,,,\nWorkplace,rule,Rule,,\n$row",
+		$dir, $prefix, @system);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+
+{
+	# ObjectProperty の値が選択肢なら、選択肢の1つ（選択肢のクラスの下位）を書ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_selector_value');
+	"]O W ja:作業場;W",\オントロジー,,,
+	Prop,kind(1,_ordered ja:列;ordered,,
+	,,_set ja:集合;set,,
+	Workplace,rule,Rule,,
+	,,| kind,_set,
+	Rule,,,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_selector_value.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#rule'}->{'#kind'}, {'@id' => '#_set'}, 'selector value');
+}
+
+# ObjectProperty の値の書き違い（定義の無い値・選択肢でない値）はエラー（出力を作らない）
+foreach my $case (
+	['plrTest_value_undef', ",,| kind,_sett,\n", 'undefined value'],
+	['plrTest_value_not_option', ",,| kind,Rule,\n", 'value outside the selector'],
+	['plrTest_value_system_undef', ",,| onto34,_onto34,\n", 'undefined system value', $systemOntology],
+) {
+	my ($prefix, $row, $name, @system) = @$case;
+	run_command('cto.pl',
+		"\"]O W ja:作業場;W\",\\オントロジー,,,\nProp,kind(1,_ordered ja:列;ordered,,\n,,_set ja:集合;set,,\nWorkplace,rule,Rule,,\n$row",
 		$dir, $prefix, @system);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
