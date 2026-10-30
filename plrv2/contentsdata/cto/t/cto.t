@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 28;
+use Test::More tests => 27;
 
 sub run_command {
 	my $command = shift;
@@ -164,9 +164,10 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 }
 
 {
-	# 系の予約属性 linkPath（plrDart の追記R971）：arg1 から arg2 へたどる属性の ID を
-	# 空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では # 付きの ID の
-	# 歩みの @list にする。道の属性は、シートか、引数で渡した系のオントロジーで
+	# 系の予約属性 linkPath（plrDart の追記R971・R972）：arg1 から arg2 へたどる属性の
+	# ID を空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では歩みの @list に
+	# し、歩みは SHACL の属性の道の形（順向きは # 付きの ID、逆向きは inversePath で
+	# 包む）にする。道の属性は、シートか、引数で渡した系のオントロジーで
 	# 定義されているもの
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path', $systemOntology);
 	"]O DG ja:議論;DG",\オントロジー,,,
@@ -179,18 +180,13 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 	my $p = json_file_to_perl("$dir/plrTest_link_path.jsonld");
 	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
 	is_deeply($d{'#ConjSubIssue'}->{'#linkPath'},
-						{'@list' => [{'step' => {'@id' => '#conjSubIssue'}}]},
+						{'@list' => [{'@id' => '#conjSubIssue'}]},
 						'linkPath of one step');
-	# truthValue は系の属性、isTrue はシートの属性。inverse は JSON の true
-	# （読み手によって真偽値の表し方が違うので、文字列にしてから比べる）
-	is_deeply([map { my %s = %$_; my $id = delete($s{'step'})->{'@id'};
-									 join(' ', $id, map { "$_=$s{$_}" } sort keys %s)
-								 } @{$d{'#Then'}->{'#linkPath'}->{'@list'}}],
-						['#truthValue', '#isTrue inverse=1'],
+	# truthValue は系の属性、isTrue はシートの属性
+	is_deeply($d{'#Then'}->{'#linkPath'},
+						{'@list' => [{'@id' => '#truthValue'},
+												 {'inversePath' => {'@id' => '#isTrue'}}]},
 						'linkPath of two steps with an inverse one');
-	open(my $f, '<', "$dir/plrTest_link_path.jsonld") or die "$!";
-	my $text = do { local $/; <$f> };
-	like($text, qr/"inverse"\s*:\s*true\b/, 'inverse is written as JSON true');
 	ok(!exists($d{'#linkPath'}), 'linkPath is not declared');
 }
 

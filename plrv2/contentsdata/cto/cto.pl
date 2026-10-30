@@ -376,10 +376,10 @@ sub resolveClassPropertyValues {
 }
 
 # linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
-# たどる属性には - を付ける）を、歩みの @list にする（plrDart の追記R971）。
+# たどる属性には - を付ける）を、歩みの @list にする（plrDart の追記R971・R972）。
+# 歩みの形は SHACL の属性の道に合わせ、順向きは属性の ID、逆向きは inversePath で包む。
 # 例："truthValue -isTrue" →
-#   {"@list": [{"step": {"@id": "#truthValue"}},
-#              {"step": {"@id": "#isTrue"}, "inverse": true}]}
+#   {"@list": [{"@id": "#truthValue"}, {"inversePath": {"@id": "#isTrue"}}]}
 # 道に書いた属性が、シートにも系（isSystemProperty）にも定義されていなければエラー
 sub resolveLinkPath {
 	my ($val, $line) = @_;
@@ -391,9 +391,8 @@ sub resolveLinkPath {
 		my $p = $typeMap{"#$s"};
 		die("Error: undefined property `$s' in `| linkPath' at line $line\n")
 			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
-		my $step = { 'step' => { '@id' => "#$s" } };
-		$step->{'inverse'} = JSON::true if ($inverse);
-		push(@steps, $step);
+		my $step = { '@id' => "#$s" };
+		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
 	}
 	die("Error: no property in `| linkPath' at line $line\n") unless (@steps);
 	return { '@list' => \@steps };
