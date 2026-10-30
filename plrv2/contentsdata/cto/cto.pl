@@ -65,14 +65,45 @@ sub checkReservedWord {
 }
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
-# 無くても文字列の値として書く（予約クラスと同じく、宣言は系の側にある）。
-# linkPath（plrDart の追記R887）は、名前・置き場所・形が決まってから足す
+# 無くても書く（予約クラスと同じく、宣言は系の側にある）。builtInFunction は文字列、
+# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction");
+    my @rsvprop = ("builtInFunction", "linkPath");
 
     return scalar(grep { $_ eq $id } @rsvprop);
+}
+
+# 系（plrDart の sample/system の Ontology.jsonld・Base.jsonld）で定義されている属性の
+# チェック。linkPath の道に書けるのは、シートか系で定義されている属性だけである。
+# 系のオントロジーに属性を足したら、ここにも足す
+sub isSystemProperty {
+	my ($id) = @_;
+	my @sysprop = (
+		"agent", "arg1", "arg2", "assistance", "begin", "beginTime", "channel",
+		"channelSetting", "channels", "cnt", "complete", "completeByOkButton",
+		"completeOrSuspendByOkButton", "conjSubTask", "constituent", "content", "count",
+		"creator", "disjSubTask", "disjunction", "duration10minutes", "duration1hour",
+		"duration20minutes", "duration30minutes", "durationValue", "editor", "end",
+		"existence", "existing", "faAggregation", "faCommon", "faIndividual", "field",
+		"fieldArgument", "fieldNode", "fieldProperty", "im", "inChannel", "index",
+		"isComplete", "next", "notificationLeadTime", "okButton", "once", "onto", "onto0",
+		"onto1", "onto10", "onto2", "onto200", "onto201", "onto202", "onto210", "onto211",
+		"onto212", "onto220", "onto221", "onto222", "onto230", "onto231", "onto232",
+		"onto240", "onto241", "onto242", "onto250", "onto251", "onto252", "onto260",
+		"onto261", "onto262", "onto270", "onto271", "onto272", "onto3", "onto30", "onto31",
+		"onto32", "onto33", "onto34", "onto35", "onto4", "onto5", "onto6", "onto7", "onto8",
+		"onto80", "onto81", "onto82", "onto9", "ontoA", "ontoC", "ontoCC", "ontoChS",
+		"ontoCs", "ontoD", "ontoEC", "ontoER", "ontoFMT", "ontoG", "ontoID", "ontoR",
+		"ontoR00", "ontoR01", "ontoRU", "operand1", "operand2", "percentage", "person",
+		"plusMinus3", "plusMinus4", "plusMinus5", "pullBack", "reactionPN", "refersTo",
+		"retrieve", "reusable", "sensitive", "setting", "state", "task", "taskAgent",
+		"taskEditor", "taskUser", "title", "truthValue", "valCm", "valDecimal",
+		"valNaturalNumber", "weightVal"
+	);
+
+	return scalar(grep { $_ eq $id } @sysprop);
 }
 
 # 予約クラスのチェック
@@ -328,7 +359,8 @@ sub resolveClassPropertyValues {
 		unless ($p) {
 			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
 				unless (isReservedProperty($propId));
-			$cls->{"#$propId"} = $val;
+			$cls->{"#$propId"} = ($propId eq "linkPath")
+				? resolveLinkPath($val, $line) : $val;
 			next;
 		}
 		if ($p->{'@type'} eq "ObjectProperty") {
@@ -338,6 +370,30 @@ sub resolveClassPropertyValues {
 			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
+}
+
+# linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
+# たどる属性には - を付ける）を、歩みの @list にする（plrDart の追記R971）。
+# 例："truthValue -isTrue" →
+#   {"@list": [{"step": {"@id": "#truthValue"}},
+#              {"step": {"@id": "#isTrue"}, "inverse": true}]}
+# 道に書いた属性が、シートにも系（isSystemProperty）にも定義されていなければエラー
+sub resolveLinkPath {
+	my ($val, $line) = @_;
+	my @steps;
+	foreach my $s (split(/\s+/, $val)) {
+		next if ($s eq '');
+		my $inverse = ($s =~ s/^-//);
+		$s =~ s/^#//;
+		my $p = $typeMap{"#$s"};
+		die("Error: undefined property `$s' in `| linkPath' at line $line\n")
+			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
+		my $step = { 'step' => { '@id' => "#$s" } };
+		$step->{'inverse'} = JSON::true if ($inverse);
+		push(@steps, $step);
+	}
+	die("Error: no property in `| linkPath' at line $line\n") unless (@steps);
+	return { '@list' => \@steps };
 }
 
 # subClassOf にスーパークラスを追加

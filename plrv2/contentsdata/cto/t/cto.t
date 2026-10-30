@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 20;
+use Test::More tests => 26;
 
 sub run_command {
 	my $command = shift;
@@ -150,6 +150,48 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	is($d{'#Equal'}->{'#builtInFunction'}, 'equal',
 		 'reserved property value without declaration');
 	ok(!exists($d{'#builtInFunction'}), 'reserved property is not declared');
+}
+
+{
+	# 系の予約属性 linkPath（plrDart の追記R971）：arg1 から arg2 へたどる属性の ID を
+	# 空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では # 付きの ID の
+	# 歩みの @list にする。道の属性は、シートか系で定義されているもの
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path');
+	"]O DG ja:議論;DG",\オントロジー,,,
+	Issue,conjSubIssue,Issue,,
+	Answer,isTrue,boolean,,
+	GraphRelation,,,,
+	,ConjSubIssue,| linkPath,conjSubIssue,
+	,Then,| linkPath,truthValue -isTrue,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_link_path.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#ConjSubIssue'}->{'#linkPath'},
+						{'@list' => [{'step' => {'@id' => '#conjSubIssue'}}]},
+						'linkPath of one step');
+	# truthValue は系の属性、isTrue はシートの属性。inverse は JSON の true
+	# （読み手によって真偽値の表し方が違うので、文字列にしてから比べる）
+	is_deeply([map { my %s = %$_; my $id = delete($s{'step'})->{'@id'};
+									 join(' ', $id, map { "$_=$s{$_}" } sort keys %s)
+								 } @{$d{'#Then'}->{'#linkPath'}->{'@list'}}],
+						['#truthValue', '#isTrue inverse=1'],
+						'linkPath of two steps with an inverse one');
+	open(my $f, '<', "$dir/plrTest_link_path.jsonld") or die "$!";
+	my $text = do { local $/; <$f> };
+	like($text, qr/"inverse"\s*:\s*true\b/, 'inverse is written as JSON true');
+	ok(!exists($d{'#linkPath'}), 'linkPath is not declared');
+}
+
+# linkPath の道に、定義の無い属性やクラスを書くとエラー（出力を作らない）
+foreach my $case (
+	['plrTest_link_path_undef', ",Typo,| linkPath,truthValue -conjSubIsue,\n", 'undefined property in linkPath'],
+	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath'],
+) {
+	my ($prefix, $row, $name) = @$case;
+	run_command('cto.pl',
+		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
+		$dir, $prefix);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 
 # 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
