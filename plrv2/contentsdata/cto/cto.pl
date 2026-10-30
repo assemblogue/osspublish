@@ -10,7 +10,10 @@ use JSON;
 use Encode qw/encode_utf8 decode_utf8/;
 use Data::Dumper;
 
-die("usage: cto.pl ontologyName prefix")
+# 3つ目からの引数は、系のオントロジー（plrDart の sample/system の Ontology.jsonld・
+# Base.jsonld など）の JSON-LD。linkPath の道に書いた属性が系で定義されているかを、
+# ここから集めた属性の ID で確かめる（isSystemProperty）。無ければシートの中だけで確かめる
+die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
     if (@ARGV < 2);
 
 #
@@ -20,6 +23,8 @@ die("usage: cto.pl ontologyName prefix")
 my @types, %typeMap, @OMap;
 # "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
 my @classValues;
+# 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
+my %systemProps;
 my $mode;
 
 
@@ -28,6 +33,7 @@ my $mode;
 my $autoClassCount = 0;
 
 MAIN: {
+    readSystemOntologies(@ARGV[2 .. $#ARGV]);
     parseInput();
     resolveClassPropertyValues();
     outputOntology($ARGV[0], $ARGV[1]);
@@ -65,14 +71,42 @@ sub checkReservedWord {
 }
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
-# 無くても文字列の値として書く（予約クラスと同じく、宣言は系の側にある）。
-# linkPath（plrDart の追記R887）は、名前・置き場所・形が決まってから足す
+# 無くても書く（予約クラスと同じく、宣言は系の側にある）。builtInFunction は文字列、
+# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction");
+    my @rsvprop = ("builtInFunction", "linkPath");
 
     return scalar(grep { $_ eq $id } @rsvprop);
+}
+
+# 系のオントロジーの JSON-LD のファイル [@files] を読み、定義されている属性
+# （@type が Class でないもの）の ID を %systemProps に集める
+sub readSystemOntologies {
+	my @files = @_;
+	foreach my $file (@files) {
+		die("Error: failed to open system ontology `$file': $!\n")
+			unless (open(my $f, '<:raw', $file));
+		my $text = do { local $/; <$f> };
+		close($f);
+		my $o = eval { JSON->new->utf8->decode($text) };
+		die("Error: failed to read system ontology `$file': $@\n")
+			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
+		foreach my $d (@{$o->{'defines'}}) {
+			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
+			next if (($d->{'@type'} // '') eq 'Class');
+			(my $id = $d->{'@id'}) =~ s/^#//;
+			$systemProps{$id} = 1;
+		}
+	}
+}
+
+# 系（readSystemOntologies で読んだオントロジー）で定義されている属性のチェック。
+# linkPath の道に書けるのは、シートか系で定義されている属性だけである
+sub isSystemProperty {
+	my ($id) = @_;
+	return exists($systemProps{$id});
 }
 
 # 予約クラスのチェック
@@ -328,7 +362,8 @@ sub resolveClassPropertyValues {
 		unless ($p) {
 			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
 				unless (isReservedProperty($propId));
-			$cls->{"#$propId"} = $val;
+			$cls->{"#$propId"} = ($propId eq "linkPath")
+				? resolveLinkPath($val, $line) : $val;
 			next;
 		}
 		if ($p->{'@type'} eq "ObjectProperty") {
@@ -338,6 +373,29 @@ sub resolveClassPropertyValues {
 			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
+}
+
+# linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
+# たどる属性には - を付ける）を、歩みの @list にする（plrDart の追記R971・R972）。
+# 歩みの形は SHACL の属性の道に合わせ、順向きは属性の ID、逆向きは inversePath で包む。
+# 例："truthValue -isTrue" →
+#   {"@list": [{"@id": "#truthValue"}, {"inversePath": {"@id": "#isTrue"}}]}
+# 道に書いた属性が、シートにも系（isSystemProperty）にも定義されていなければエラー
+sub resolveLinkPath {
+	my ($val, $line) = @_;
+	my @steps;
+	foreach my $s (split(/\s+/, $val)) {
+		next if ($s eq '');
+		my $inverse = ($s =~ s/^-//);
+		$s =~ s/^#//;
+		my $p = $typeMap{"#$s"};
+		die("Error: undefined property `$s' in `| linkPath' at line $line\n")
+			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
+		my $step = { '@id' => "#$s" };
+		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
+	}
+	die("Error: no property in `| linkPath' at line $line\n") unless (@steps);
+	return { '@list' => \@steps };
 }
 
 # subClassOf にスーパークラスを追加

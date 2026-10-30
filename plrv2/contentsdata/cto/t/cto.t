@@ -4,14 +4,15 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 20;
+use Test::More tests => 27;
 
 sub run_command {
 	my $command = shift;
 	my $content = shift;
 	my $dir = shift;
 	my $prefix = shift;
-	my $pid = open2(my $child_in, my $child_out, "$^X ./$command $dir/$prefix $prefix") or die "$!";
+	# 残りの引数は系のオントロジーのファイル
+	my $pid = open2(my $child_in, my $child_out, join(' ', "$^X ./$command $dir/$prefix $prefix", @_)) or die "$!";
 	print $child_out $content;
 	close $child_in;
 	close $child_out;
@@ -20,6 +21,16 @@ sub run_command {
 }
 
 my $dir = tempdir('/tmp/plrtest_XXXX');
+
+# 系のオントロジー（linkPath の道の属性を確かめるのに渡す。plrDart の
+# sample/system/Ontology.jsonld の形を小さくしたもの）
+my $systemOntology = "$dir/plrTest_system.jsonld";
+{
+	open(my $f, '>', $systemOntology) or die "$!";
+	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
+		. ' {"@id": "#Constraint", "@type": "Class"}]}';
+	close($f);
+}
 
 {
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_hyphen');
@@ -150,6 +161,48 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	is($d{'#Equal'}->{'#builtInFunction'}, 'equal',
 		 'reserved property value without declaration');
 	ok(!exists($d{'#builtInFunction'}), 'reserved property is not declared');
+}
+
+{
+	# 系の予約属性 linkPath（plrDart の追記R971・R972）：arg1 から arg2 へたどる属性の
+	# ID を空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では歩みの @list に
+	# し、歩みは SHACL の属性の道の形（順向きは # 付きの ID、逆向きは inversePath で
+	# 包む）にする。道の属性は、シートか、引数で渡した系のオントロジーで
+	# 定義されているもの
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path', $systemOntology);
+	"]O DG ja:議論;DG",\オントロジー,,,
+	Issue,conjSubIssue,Issue,,
+	Answer,isTrue,boolean,,
+	GraphRelation,,,,
+	,ConjSubIssue,| linkPath,conjSubIssue,
+	,Then,| linkPath,truthValue -isTrue,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_link_path.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#ConjSubIssue'}->{'#linkPath'},
+						{'@list' => [{'@id' => '#conjSubIssue'}]},
+						'linkPath of one step');
+	# truthValue は系の属性、isTrue はシートの属性
+	is_deeply($d{'#Then'}->{'#linkPath'},
+						{'@list' => [{'@id' => '#truthValue'},
+												 {'inversePath' => {'@id' => '#isTrue'}}]},
+						'linkPath of two steps with an inverse one');
+	ok(!exists($d{'#linkPath'}), 'linkPath is not declared');
+}
+
+# linkPath の道に、定義の無い属性やクラスを書くとエラー（出力を作らない）。系の
+# オントロジーを渡さなければ、系の属性も定義の無い属性になる
+foreach my $case (
+	['plrTest_link_path_undef', ",Typo,| linkPath,truthValue -conjSubIsue,\n", 'undefined property in linkPath', $systemOntology],
+	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath', $systemOntology],
+	['plrTest_link_path_sysclass', ",SysCls,| linkPath,Constraint,\n", 'system class in linkPath', $systemOntology],
+	['plrTest_link_path_nosys', ",Sys,| linkPath,truthValue,\n", 'system property without the system ontology'],
+) {
+	my ($prefix, $row, $name, @system) = @$case;
+	run_command('cto.pl',
+		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
+		$dir, $prefix, @system);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 
 # 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
