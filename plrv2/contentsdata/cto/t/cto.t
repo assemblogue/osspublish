@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 34;
+use Test::More tests => 38;
 
 sub run_command {
 	my $command = shift;
@@ -28,6 +28,7 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 {
 	open(my $f, '>', $systemOntology) or die "$!";
 	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
+		. ' {"@id": "#onto34", "@type": "ObjectProperty"},'
 		. ' {"@id": "#Constraint", "@type": "Class"}]}';
 	close($f);
 }
@@ -243,6 +244,39 @@ foreach my $case (
 	run_command('cto.pl',
 		"\"]O Org ja:組織;Org\",\\オントロジー,,,\nGroup,groupMember,Person,,\n$row",
 		$dir, $prefix, $systemOntology);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+
+{
+	# "| 属性" は、この行で直近のクラスか属性の宣言に書く（plrDart の追記R979——
+	# 属性の集まりの種類 onto34 を属性に書く）。前の行から引き継いだ属性のカラムの
+	# 後にも書ける。系のオントロジーで定義されたメタ属性（onto34）も書ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_property_value', $systemOntology);
+	"]O W ja:作業場;W",\オントロジー,,,
+	Workplace,rule,Rule,,
+	,,| onto34,_onto340,
+	,count(1,integer,| onto34,_onto342,
+	Rule,,,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_property_value.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply([$d{'#rule'}->{'#onto34'}, $d{'#count'}->{'#onto34'}],
+						[{'@id' => '#_onto340'}, {'@id' => '#_onto342'}],
+						'property value on a property (carried and same row)');
+	ok(!exists($d{'#Workplace'}->{'#onto34'}) && !exists($d{'#Rule'}->{'#onto34'}),
+		 'property value is not written to the class');
+}
+
+# 属性の宣言に書く値：系を渡さなければ onto34 は定義の無い属性、クラスレベルの
+# 予約属性は属性の宣言に書けない（出力を作らない）
+foreach my $case (
+	['plrTest_property_value_nosys', ",count(1,integer,| onto34,_onto340,\n", 'meta property on a property without the system ontology'],
+	['plrTest_property_value_reserved', ",count(1,integer,| builtInFunction,equal,\n", 'class-level property on a property', $systemOntology],
+) {
+	my ($prefix, $row, $name, @system) = @$case;
+	run_command('cto.pl',
+		"\"]O W ja:作業場;W\",\\オントロジー,,,\nWorkplace,rule,Rule,,\n$row",
+		$dir, $prefix, @system);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 

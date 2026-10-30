@@ -21,9 +21,9 @@ die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
 # OMapブロック管理用
 #
 my @types, %typeMap, @OMap;
-# "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
+# "| 属性" で書いた、クラスか属性の宣言の値。全部読んでから属性の定義で型を決める
 my @classValues;
-# 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
+# 系のオントロジーで定義されている属性（# を外した ID → 定義）。readSystemOntologies が集める
 my %systemProps;
 my $mode;
 
@@ -97,7 +97,7 @@ sub readSystemOntologies {
 			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
 			next if (($d->{'@type'} // '') eq 'Class');
 			(my $id = $d->{'@id'}) =~ s/^#//;
-			$systemProps{$id} = 1;
+			$systemProps{$id} = $d;
 		}
 	}
 }
@@ -141,6 +141,9 @@ sub extract {
     my ($fields, $lc, $own) = @_;
 
     my $pcls="", $cls="", $prop="", $res;
+	# "| 属性" の値を書く宣言：この行で直近のクラスか属性（前の行から引き継いだ
+	# カラムも含む）。plrDart の追記R979——属性の集まりの種類（onto34）を属性に書く
+	my $decl;
 	# "| 属性" カラムの直後のカラム番号と、その属性
 	my $valueCol = -1, $valueProp = "";
 	# 前の行から引き継いだ "| 属性" カラムの直後のカラム番号
@@ -164,10 +167,10 @@ sub extract {
 		}
 
 		if ($autoClassCount - 1 == $valueCol) {
-			# "| 属性" の右隣のカラム：直近のクラスのその属性の値（"0" も値）
+			# "| 属性" の右隣のカラム：直近のクラスか属性の、その属性の値（"0" も値）
 			die("Error: no value for `| $valueProp' at line $lc\n")
 				unless (defined($_) && $_ ne '');
-			push(@classValues, [$cls, $valueProp, $_, $lc]);
+			push(@classValues, [$decl, $valueProp, $_, $lc]);
 			$valueCol = -1;
 			next;
 		}
@@ -186,10 +189,12 @@ sub extract {
 		elsif ($mode eq "O") {
 			# オントロジー定義のみ扱う
 			if (/^\|\s*(\S+)/) {
-				# "| 属性"：右隣のカラムが、直近のクラスのその属性の値
-				# 前の行から引き継いだカラムなら扱わない（値を二度書かないため）
+				# "| 属性"：右隣のカラムが、この行で直近のクラスか属性（$decl）の、
+				# その属性の値。前の行から引き継いだカラムなら扱わない（値を二度
+				# 書かないため）
 				if ($autoClassCount - 1 >= $own) {
-					die("Error: `| $1' without class at line $lc\n") unless ($cls);
+					die("Error: `| $1' without class or property at line $lc\n")
+						unless ($decl);
 					$valueCol = $autoClassCount;
 					$valueProp = $1;
 				} else {
@@ -201,6 +206,7 @@ sub extract {
 				# 同じく # を付けない）。ラベルは組込みのものを使うので読まない（osspublish#3）
 				$cls = $res = builtinClass(checkReservedClass($_));
 				$pcls = $cls;
+				$decl = $cls;
 			} elsif (($autoClassCount > 1) && checkReservedClass($_)) {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
@@ -220,6 +226,7 @@ sub extract {
 
 				$cls = $res = parseClass($id, $label, $pcls);
 				$pcls = $cls;
+				$decl = $cls;
 
 				if ($prop) {
 					# 域値クラス指定
@@ -238,6 +245,7 @@ sub extract {
 				else {
 					# ここは直近のクラス$clsを引数にする
 					$prop = $res = parseProperty($id, $label, $cls, $prop);
+					$decl = $prop;
 
 					# $pclsはクラス間の従属関係なので、間にプロパティ定義が入る場合、クリアする
 					$pcls = "";
@@ -348,20 +356,24 @@ sub parseClass {
     return $cls;
 }
 
-# クラスの属性に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
-# （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。ただし
-# 系の予約属性（isReservedProperty）は、宣言が無ければ文字列として書く。
-# 属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる。
+# クラスか属性の宣言に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
+# （属性の定義が値より後の行にあってもよい）。定義はシートのものか、渡した系の
+# オントロジーのもの（属性の宣言に書く onto34 など。plrDart の追記R979）。どちらにも
+# 無い属性ならエラー。ただし系の予約属性（isReservedProperty）は、宣言が無くても
+# reservedPropertyValue の形で書く——予約属性はクラスレベル属性なので、属性の宣言
+# には書けない。属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる。
 # **鍵は # 付きの属性 ID にする**（"#builtInFunction" など。plrDart の追記R957）
 # ——素の名前で書くと、読む側でオントロジーの ID が前に付き、別の鍵になる
 sub resolveClassPropertyValues {
 	foreach my $cv (@classValues) {
 		my ($cls, $propId, $val, $line) = @$cv;
 
-		my $p = $typeMap{"#$propId"};
+		my $p = $typeMap{"#$propId"} || $systemProps{$propId};
 		unless ($p) {
 			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
 				unless (isReservedProperty($propId));
+			die("Error: class-level property `| $propId' on a property at line $line\n")
+				if ($cls->{'@type'} ne "Class");
 			$cls->{"#$propId"} = reservedPropertyValue($propId, $val, $line);
 			next;
 		}
