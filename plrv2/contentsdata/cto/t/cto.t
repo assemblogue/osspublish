@@ -144,15 +144,12 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	"]O Calc ja:計算;Calc",\オントロジー,,,
 	Constraint,,,,
 	,Equal =,| builtInFunction,equal,
-	,AndDecomposition,| linkPath,conjSubTask,
 	EOD
 	my $p = json_file_to_perl("$dir/plrTest_reserved_property.jsonld");
 	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
-	is_deeply([$d{'#Equal'}->{'#builtInFunction'}, $d{'#AndDecomposition'}->{'#linkPath'}],
-						['equal', 'conjSubTask'],
-						'reserved property values without declaration');
-	ok(!exists($d{'#builtInFunction'}) && !exists($d{'#linkPath'}),
-		 'reserved properties are not declared');
+	is($d{'#Equal'}->{'#builtInFunction'}, 'equal',
+		 'reserved property value without declaration');
+	ok(!exists($d{'#builtInFunction'}), 'reserved property is not declared');
 }
 
 # 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）

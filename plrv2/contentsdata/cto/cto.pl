@@ -65,11 +65,12 @@ sub checkReservedWord {
 }
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
-# 無くても文字列の値として書く（予約クラスと同じく、宣言は系の側にある）
+# 無くても文字列の値として書く（予約クラスと同じく、宣言は系の側にある）。
+# linkPath（plrDart の追記R887）は、名前・置き場所・形が決まってから足す
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction", "linkPath");
+    my @rsvprop = ("builtInFunction");
 
     return scalar(grep { $_ eq $id } @rsvprop);
 }
