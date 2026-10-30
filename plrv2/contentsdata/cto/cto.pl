@@ -64,6 +64,17 @@ sub checkReservedWord {
     return checkWord(\@rsvky, $_);
 }
 
+# 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
+# 無くても文字列の値として書く（予約クラスと同じく、宣言は系の側にある）。
+# linkPath（plrDart の追記R887）は、名前・置き場所・形が決まってから足す
+sub isReservedProperty {
+    my ($id) = @_;
+    # 予約属性
+    my @rsvprop = ("builtInFunction");
+
+    return scalar(grep { $_ eq $id } @rsvprop);
+}
+
 # 予約クラスのチェック
 # 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedClass {
@@ -304,20 +315,27 @@ sub parseClass {
 }
 
 # クラスの属性に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
-# （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。
-# 属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる
+# （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。ただし
+# 系の予約属性（isReservedProperty）は、宣言が無ければ文字列として書く。
+# 属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる。
+# **鍵は # 付きの属性 ID にする**（"#builtInFunction" など。plrDart の追記R957）
+# ——素の名前で書くと、読む側でオントロジーの ID が前に付き、別の鍵になる
 sub resolveClassPropertyValues {
 	foreach my $cv (@classValues) {
 		my ($cls, $propId, $val, $line) = @$cv;
 
 		my $p = $typeMap{"#$propId"};
-		die("Error: undefined property `$propId' in `| $propId' at line $line\n")
-			unless ($p);
+		unless ($p) {
+			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
+				unless (isReservedProperty($propId));
+			$cls->{"#$propId"} = $val;
+			next;
+		}
 		if ($p->{'@type'} eq "ObjectProperty") {
 			$val =~ s/^#//;
-			$cls->{$propId} = { '@id' => "#$val" };
+			$cls->{"#$propId"} = { '@id' => "#$val" };
 		} else {
-			$cls->{$propId} = valueOfRange($p->{'range'}, $val);
+			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
 }

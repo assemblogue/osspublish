@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 17;
+use Test::More tests => 20;
 
 sub run_command {
 	my $command = shift;
@@ -88,9 +88,11 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	EOD
 	my $p = json_file_to_perl("$dir/plrTest_classvalue.jsonld");
 	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
-	is($d{'#Equal'}->{'builtInFunction'}, 'Equal', 'class property value (string)');
+	# 鍵は # 付きの属性 ID（読む側でオントロジーの ID が前に付かないように）
+	is($d{'#Equal'}->{'#builtInFunction'}, 'Equal', 'class property value (string)');
+	ok(!exists($d{'#Equal'}->{'builtInFunction'}), 'class property value has no bare key');
 	# ObjectProperty の値は ID。前の行から引き継いだ "| 属性" は値を書き直さない
-	is_deeply($d{'#Order'}->{'compensatesWith'}, {'@id' => '#Undo'},
+	is_deeply($d{'#Order'}->{'#compensatesWith'}, {'@id' => '#Undo'},
 						'class property value (object), not overwritten by carried column');
 }
 
@@ -105,7 +107,7 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	EOD
 	my $p = json_file_to_perl("$dir/plrTest_classvalue_later.jsonld");
 	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
-	is_deeply($d{'#Order'}->{'compensatesWith'}, {'@id' => '#Undo'},
+	is_deeply($d{'#Order'}->{'#compensatesWith'}, {'@id' => '#Undo'},
 						'class property value (object), property defined later');
 }
 
@@ -119,7 +121,7 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	EOD
 	open(my $f, '<', "$dir/plrTest_classvalue_number.jsonld") or die "$!";
 	my $text = do { local $/; <$f> };
-	like($text, qr/"count"\s*:\s*0\b/, 'class property value "0" as a number');
+	like($text, qr/"#count"\s*:\s*0\b/, 'class property value "0" as a number');
 }
 
 {
@@ -134,6 +136,20 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	my $p = json_file_to_perl("$dir/plrTest_classvalue_carried.jsonld");
 	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
 	ok(!exists($d{'#equal'}), 'carried value column is not read as a property');
+}
+
+{
+	# 系の予約属性は、シートに宣言が無くても文字列として書く（宣言は系の側にある）
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_reserved_property');
+	"]O Calc ja:計算;Calc",\オントロジー,,,
+	Constraint,,,,
+	,Equal =,| builtInFunction,equal,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_reserved_property.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is($d{'#Equal'}->{'#builtInFunction'}, 'equal',
+		 'reserved property value without declaration');
+	ok(!exists($d{'#builtInFunction'}), 'reserved property is not declared');
 }
 
 # 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
