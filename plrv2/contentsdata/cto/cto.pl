@@ -78,7 +78,7 @@ sub checkReservedWord {
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction", "linkPath", "elementProperty", "elementTransitive");
+    my @rsvprop = ("builtInFunction", "linkPath");
 
     return scalar(grep { $_ eq $id } @rsvprop);
 }
@@ -426,26 +426,11 @@ sub isSubClassOrSelf {
 # 系の予約属性 [$propId] の値 [$val] を、書き出す形にする：
 # * builtInFunction：文字列のまま
 # * linkPath：属性の道（resolveLinkPath。plrDart の追記R971・R972）
-# * elementProperty：要素を持つ属性の ID（{"@id": "#…"}。plrDart の追記R974）。
-#   シートか系で定義されていなければエラー
-# * elementTransitive：入れ子をたどるか（真偽値。plrDart の追記R974）。
-#   true・false（大文字小文字は問わない）のほかはエラー
+# （elementProperty・elementTransitive は plrDart の追記R983 でやめた——要素は、クラスが
+# 制限で持つと宣言した hasElement の下位属性で決まる）
 sub reservedPropertyValue {
 	my ($propId, $val, $line) = @_;
-	if ($propId eq "linkPath") {
-		return resolveLinkPath($val, $line);
-	} elsif ($propId eq "elementProperty") {
-		(my $id = $val) =~ s/^\s+|\s+$//g;
-		$id =~ s/^#//;
-		die("Error: undefined property `$id' in `| elementProperty' at line $line\n")
-			unless (isDefinedProperty($id));
-		return { '@id' => "#$id" };
-	} elsif ($propId eq "elementTransitive") {
-		(my $b = lc($val)) =~ s/^\s+|\s+$//g;
-		return JSON::true if ($b eq "true");
-		return JSON::false if ($b eq "false");
-		die("Error: `| elementTransitive' must be true or false, not `$val' at line $line\n");
-	}
+	return resolveLinkPath($val, $line) if ($propId eq "linkPath");
 	return $val;
 }
 
