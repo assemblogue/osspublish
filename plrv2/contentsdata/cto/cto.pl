@@ -21,10 +21,12 @@ die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
 # OMapブロック管理用
 #
 my @types, %typeMap, @OMap;
-# "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
+# "| 属性" で書いた、クラスか属性の宣言の値。全部読んでから属性の定義で型を決める
 my @classValues;
-# 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
+# 系のオントロジーで定義されている属性（# を外した ID → 定義）。readSystemOntologies が集める
 my %systemProps;
+# 系のオントロジーで定義されている ID（クラスも属性も。# を外したもの）
+my %systemIds;
 my $mode;
 
 
@@ -71,8 +73,8 @@ sub checkReservedWord {
 }
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
-# 無くても書く（予約クラスと同じく、宣言は系の側にある）。builtInFunction は文字列、
-# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）
+# 無くても書く（予約クラスと同じく、宣言は系の側にある）。値の形は
+# reservedPropertyValue が決める
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
@@ -95,9 +97,10 @@ sub readSystemOntologies {
 			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
 		foreach my $d (@{$o->{'defines'}}) {
 			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
-			next if (($d->{'@type'} // '') eq 'Class');
 			(my $id = $d->{'@id'}) =~ s/^#//;
-			$systemProps{$id} = 1;
+			$systemIds{$id} = 1;
+			next if (($d->{'@type'} // '') eq 'Class');
+			$systemProps{$id} = $d;
 		}
 	}
 }
@@ -141,6 +144,9 @@ sub extract {
     my ($fields, $lc, $own) = @_;
 
     my $pcls="", $cls="", $prop="", $res;
+	# "| 属性" の値を書く宣言：この行で直近のクラスか属性（前の行から引き継いだ
+	# カラムも含む）。plrDart の追記R979——属性の集まりの種類（onto34）を属性に書く
+	my $decl;
 	# "| 属性" カラムの直後のカラム番号と、その属性
 	my $valueCol = -1, $valueProp = "";
 	# 前の行から引き継いだ "| 属性" カラムの直後のカラム番号
@@ -164,10 +170,10 @@ sub extract {
 		}
 
 		if ($autoClassCount - 1 == $valueCol) {
-			# "| 属性" の右隣のカラム：直近のクラスのその属性の値（"0" も値）
+			# "| 属性" の右隣のカラム：直近のクラスか属性の、その属性の値（"0" も値）
 			die("Error: no value for `| $valueProp' at line $lc\n")
 				unless (defined($_) && $_ ne '');
-			push(@classValues, [$cls, $valueProp, $_, $lc]);
+			push(@classValues, [$decl, $valueProp, $_, $lc]);
 			$valueCol = -1;
 			next;
 		}
@@ -186,10 +192,12 @@ sub extract {
 		elsif ($mode eq "O") {
 			# オントロジー定義のみ扱う
 			if (/^\|\s*(\S+)/) {
-				# "| 属性"：右隣のカラムが、直近のクラスのその属性の値
-				# 前の行から引き継いだカラムなら扱わない（値を二度書かないため）
+				# "| 属性"：右隣のカラムが、この行で直近のクラスか属性（$decl）の、
+				# その属性の値。前の行から引き継いだカラムなら扱わない（値を二度
+				# 書かないため）
 				if ($autoClassCount - 1 >= $own) {
-					die("Error: `| $1' without class at line $lc\n") unless ($cls);
+					die("Error: `| $1' without class or property at line $lc\n")
+						unless ($decl);
 					$valueCol = $autoClassCount;
 					$valueProp = $1;
 				} else {
@@ -201,6 +209,7 @@ sub extract {
 				# 同じく # を付けない）。ラベルは組込みのものを使うので読まない（osspublish#3）
 				$cls = $res = builtinClass(checkReservedClass($_));
 				$pcls = $cls;
+				$decl = $cls;
 			} elsif (($autoClassCount > 1) && checkReservedClass($_)) {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
@@ -220,6 +229,7 @@ sub extract {
 
 				$cls = $res = parseClass($id, $label, $pcls);
 				$pcls = $cls;
+				$decl = $cls;
 
 				if ($prop) {
 					# 域値クラス指定
@@ -238,6 +248,7 @@ sub extract {
 				else {
 					# ここは直近のクラス$clsを引数にする
 					$prop = $res = parseProperty($id, $label, $cls, $prop);
+					$decl = $prop;
 
 					# $pclsはクラス間の従属関係なので、間にプロパティ定義が入る場合、クリアする
 					$pcls = "";
@@ -348,31 +359,87 @@ sub parseClass {
     return $cls;
 }
 
-# クラスの属性に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
-# （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。ただし
-# 系の予約属性（isReservedProperty）は、宣言が無ければ文字列として書く。
-# 属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる。
+# クラスか属性の宣言に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
+# （属性の定義が値より後の行にあってもよい）。定義はシートのものか、渡した系の
+# オントロジーのもの（属性の宣言に書く onto34 など。plrDart の追記R979）。どちらにも
+# 無い属性ならエラー。ただし系の予約属性（isReservedProperty）は、宣言が無くても
+# reservedPropertyValue の形で書く——予約属性はクラスレベル属性なので、属性の宣言
+# には書けない。属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる。
 # **鍵は # 付きの属性 ID にする**（"#builtInFunction" など。plrDart の追記R957）
 # ——素の名前で書くと、読む側でオントロジーの ID が前に付き、別の鍵になる
 sub resolveClassPropertyValues {
 	foreach my $cv (@classValues) {
 		my ($cls, $propId, $val, $line) = @$cv;
 
-		my $p = $typeMap{"#$propId"};
+		my $p = $typeMap{"#$propId"} || $systemProps{$propId};
 		unless ($p) {
 			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
 				unless (isReservedProperty($propId));
-			$cls->{"#$propId"} = ($propId eq "linkPath")
-				? resolveLinkPath($val, $line) : $val;
+			die("Error: class-level property `| $propId' on a property at line $line\n")
+				if ($cls->{'@type'} ne "Class");
+			$cls->{"#$propId"} = reservedPropertyValue($propId, $val, $line);
 			next;
 		}
 		if ($p->{'@type'} eq "ObjectProperty") {
 			$val =~ s/^#//;
+			checkObjectValue($p, $propId, $val, $line);
 			$cls->{"#$propId"} = { '@id' => "#$val" };
 		} else {
 			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
+}
+
+# ObjectProperty [$p]（"| $propId"）の値 [$val]（# を外した ID）を確かめる——書き違い
+# （"_onto34" など）で止める：
+# * 値は、シートか系で定義されていなければならない
+# * 属性の値域が選択肢のクラス（setRangeClass が作る _AutomaticGeneration_…_SelectorClass）
+#   なら、値はその選択肢（その下位のクラス）でなければならない。ほかの値域（compensatesWith
+#   の ONTO1 など、値がクラスそのものであるもの）では、下位かを見ない
+sub checkObjectValue {
+	my ($p, $propId, $val, $line) = @_;
+	die("Error: undefined value `$val' for `| $propId' at line $line\n")
+		unless ($typeMap{"#$val"} || $systemIds{$val});
+	(my $range = $p->{'range'} // '') =~ s/^#//;
+	return unless ($range =~ /^_AutomaticGeneration_.*_SelectorClass$/ && $typeMap{"#$range"});
+	die("Error: `$val' is not in the range `$range' of `| $propId' at line $line\n")
+		unless (isSubClassOrSelf("#$val", "#$range"));
+}
+
+# クラス [$id] が [$super] か、その下位（subClassOf をたどる。シートの定義だけを見る）か
+sub isSubClassOrSelf {
+	my ($id, $super) = @_;
+	my %seen;
+	my @queue = ($id);
+	while (@queue) {
+		my $c = shift(@queue);
+		next if ($seen{$c}++);
+		return 1 if ($c eq $super);
+		my $cls = $typeMap{$c} or next;
+		foreach my $s (@{$cls->{'subClassOf'} || []}) {
+			push(@queue, $s->{'@id'}) if (ref($s) eq 'HASH' && $s->{'@id'});
+		}
+	}
+	return 0;
+}
+
+# 系の予約属性 [$propId] の値 [$val] を、書き出す形にする：
+# * builtInFunction：文字列のまま
+# * linkPath：属性の道（resolveLinkPath。plrDart の追記R971・R972）
+# （elementProperty・elementTransitive は plrDart の追記R983 でやめた——要素は、クラスが
+# 制限で持つと宣言した hasElement の下位属性で決まる）
+sub reservedPropertyValue {
+	my ($propId, $val, $line) = @_;
+	return resolveLinkPath($val, $line) if ($propId eq "linkPath");
+	return $val;
+}
+
+# 属性 [$id]（# を外したもの）が、シートか系（isSystemProperty）で定義されているか。
+# クラスの ID は属性ではない
+sub isDefinedProperty {
+	my ($id) = @_;
+	my $p = $typeMap{"#$id"};
+	return (($p && $p->{'@type'} ne "Class") || isSystemProperty($id));
 }
 
 # linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
@@ -388,9 +455,8 @@ sub resolveLinkPath {
 		next if ($s eq '');
 		my $inverse = ($s =~ s/^-//);
 		$s =~ s/^#//;
-		my $p = $typeMap{"#$s"};
 		die("Error: undefined property `$s' in `| linkPath' at line $line\n")
-			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
+			unless (isDefinedProperty($s));
 		my $step = { '@id' => "#$s" };
 		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
 	}

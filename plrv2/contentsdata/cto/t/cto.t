@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 27;
+use Test::More tests => 36;
 
 sub run_command {
 	my $command = shift;
@@ -28,6 +28,8 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 {
 	open(my $f, '>', $systemOntology) or die "$!";
 	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
+		. ' {"@id": "#onto34", "@type": "ObjectProperty"},'
+		. ' {"@id": "#_onto340", "@type": "Class"}, {"@id": "#_onto342", "@type": "Class"},'
 		. ' {"@id": "#Constraint", "@type": "Class"}]}';
 	close($f);
 }
@@ -201,6 +203,77 @@ foreach my $case (
 	my ($prefix, $row, $name, @system) = @$case;
 	run_command('cto.pl',
 		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
+		$dir, $prefix, @system);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+
+# elementProperty・elementTransitive は予約属性でない（plrDart の追記R983 でやめた）。
+# シートに宣言が無ければ、ほかの属性と同じく定義の無い属性で止まる（出力を作らない）
+{
+	my $prefix = 'plrTest_element_removed';
+	run_command('cto.pl',
+		"\"]O Org ja:組織;Org\",\\オントロジー,,,\nGroup,groupMember,Person,,\n,,| elementTransitive,true,\n",
+		$dir, $prefix, $systemOntology);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", 'error: elementTransitive is no longer reserved');
+}
+
+{
+	# "| 属性" は、この行で直近のクラスか属性の宣言に書く（plrDart の追記R979——
+	# 属性の集まりの種類 onto34 を属性に書く）。前の行から引き継いだ属性のカラムの
+	# 後にも書ける。系のオントロジーで定義されたメタ属性（onto34）も書ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_property_value', $systemOntology);
+	"]O W ja:作業場;W",\オントロジー,,,
+	Workplace,rule,Rule,,
+	,,| onto34,_onto340,
+	,count(1,integer,| onto34,_onto342,
+	Rule,,,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_property_value.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply([$d{'#rule'}->{'#onto34'}, $d{'#count'}->{'#onto34'}],
+						[{'@id' => '#_onto340'}, {'@id' => '#_onto342'}],
+						'property value on a property (carried and same row)');
+	ok(!exists($d{'#Workplace'}->{'#onto34'}) && !exists($d{'#Rule'}->{'#onto34'}),
+		 'property value is not written to the class');
+}
+
+# 属性の宣言に書く値：系を渡さなければ onto34 は定義の無い属性、クラスレベルの
+# 予約属性は属性の宣言に書けない（出力を作らない）
+foreach my $case (
+	['plrTest_property_value_nosys', ",count(1,integer,| onto34,_onto340,\n", 'meta property on a property without the system ontology'],
+	['plrTest_property_value_reserved', ",count(1,integer,| builtInFunction,equal,\n", 'class-level property on a property', $systemOntology],
+) {
+	my ($prefix, $row, $name, @system) = @$case;
+	run_command('cto.pl',
+		"\"]O W ja:作業場;W\",\\オントロジー,,,\nWorkplace,rule,Rule,,\n$row",
+		$dir, $prefix, @system);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+
+{
+	# ObjectProperty の値が選択肢なら、選択肢の1つ（選択肢のクラスの下位）を書ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_selector_value');
+	"]O W ja:作業場;W",\オントロジー,,,
+	Prop,kind(1,_ordered ja:列;ordered,,
+	,,_set ja:集合;set,,
+	Workplace,rule,Rule,,
+	,,| kind,_set,
+	Rule,,,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_selector_value.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#rule'}->{'#kind'}, {'@id' => '#_set'}, 'selector value');
+}
+
+# ObjectProperty の値の書き違い（定義の無い値・選択肢でない値）はエラー（出力を作らない）
+foreach my $case (
+	['plrTest_value_undef', ",,| kind,_sett,\n", 'undefined value'],
+	['plrTest_value_not_option', ",,| kind,Rule,\n", 'value outside the selector'],
+	['plrTest_value_system_undef', ",,| onto34,_onto34,\n", 'undefined system value', $systemOntology],
+) {
+	my ($prefix, $row, $name, @system) = @$case;
+	run_command('cto.pl',
+		"\"]O W ja:作業場;W\",\\オントロジー,,,\nProp,kind(1,_ordered ja:列;ordered,,\n,,_set ja:集合;set,,\nWorkplace,rule,Rule,,\n$row",
 		$dir, $prefix, @system);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
