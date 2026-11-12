@@ -91,7 +91,11 @@ sub readSystemOntologies {
 		my $text = do { local $/; <$f> };
 		close($f);
 		my $o = eval { JSON->new->utf8->decode($text) };
-		die("Error: failed to read system ontology `$file': $@\n")
+		die("Error: failed to read system ontology `$file': $@")
+			unless (defined($o));
+		# 制限のファイル（*_restriction.jsonld）など、defines を持たないものは系の
+		# オントロジーでない
+		die("Error: system ontology `$file' has no `defines'\n")
 			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
 		foreach my $d (@{$o->{'defines'}}) {
 			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
@@ -388,8 +392,14 @@ sub resolveLinkPath {
 		next if ($s eq '');
 		my $inverse = ($s =~ s/^-//);
 		$s =~ s/^#//;
+		die("Error: no property after `-' in `| linkPath' at line $line\n")
+			if ($s eq '');
 		my $p = $typeMap{"#$s"};
-		die("Error: undefined property `$s' in `| linkPath' at line $line\n")
+		# 系のオントロジーを渡していなければ、系の属性も定義の無い属性になる（app.rb は
+		# 渡していない）ので、そのことを添える
+		die("Error: undefined property `$s' in `| linkPath' at line $line"
+			. (%systemProps ? '' : ' (no system ontology is given, so system properties are not defined)')
+			. "\n")
 			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
 		my $step = { '@id' => "#$s" };
 		push(@steps, $inverse ? { 'inversePath' => $step } : $step);

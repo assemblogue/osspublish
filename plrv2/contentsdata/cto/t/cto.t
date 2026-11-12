@@ -4,15 +4,15 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 27;
+use Test::More tests => 30;
 
 sub run_command {
 	my $command = shift;
 	my $content = shift;
 	my $dir = shift;
 	my $prefix = shift;
-	# 残りの引数は系のオントロジーのファイル
-	my $pid = open2(my $child_in, my $child_out, join(' ', "$^X ./$command $dir/$prefix $prefix", @_)) or die "$!";
+	# 残りの引数は系のオントロジーのファイル。エラーの文は $dir/$prefix.err に残す
+	my $pid = open2(my $child_in, my $child_out, join(' ', "$^X ./$command $dir/$prefix $prefix", @_, "2>$dir/$prefix.err")) or die "$!";
 	print $child_out $content;
 	close $child_in;
 	close $child_out;
@@ -203,6 +203,32 @@ foreach my $case (
 		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
 		$dir, $prefix, @system);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+
+# エラーの文が、どこを直せばよいかを言う
+sub errorText {
+	my ($prefix) = @_;
+	open(my $f, '<:encoding(UTF-8)', "$dir/$prefix.err") or return '';
+	local $/;
+	return <$f>;
+}
+# - だけの歩みは「- の後に属性が無い」
+run_command('cto.pl',
+	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n,Dash,| linkPath,conjSubIssue -,\n",
+	$dir, 'plrTest_link_path_dash', $systemOntology);
+like(errorText('plrTest_link_path_dash'), qr/no property after `-'/, 'error text: "-" without a property');
+# 系のオントロジーを渡さずに系の属性を書くと、渡していないことを添える
+like(errorText('plrTest_link_path_nosys'), qr/no system ontology is given/, 'error text: no system ontology');
+# defines を持たない JSON-LD（制限のファイルなど）を渡すと、そう言う
+{
+	my $restriction = "$dir/plrTest_system_restriction.jsonld";
+	open(my $f, '>', $restriction) or die "$!";
+	print $f '{"@id": "ONTO", "restrictions": []}';
+	close($f);
+	run_command('cto.pl',
+		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\n",
+		$dir, 'plrTest_system_no_defines', $restriction);
+	like(errorText('plrTest_system_no_defines'), qr/has no `defines'/, 'error text: system ontology without defines');
 }
 
 # 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
