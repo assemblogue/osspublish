@@ -25,6 +25,11 @@ my @types, %typeMap, @OMap;
 my @classValues;
 # 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
 my %systemProps;
+# ラベルを添えて定義した属性の ID（# 付き）。checkUnknownDatatypes が、値域の列の名前が属性かを見る
+my %labelledProps;
+# 属性の次の列に、ラベルも印も無く名前だけを書いたもの（[名前, 属性の ID, 行]）。データ型の予約語でなく、
+# 属性として定義されてもいなければ、知らないデータ型の名前である（checkUnknownDatatypes）
+my @bareRangeNames;
 my $mode;
 
 
@@ -35,6 +40,7 @@ my $autoClassCount = 0;
 MAIN: {
     readSystemOntologies(@ARGV[2 .. $#ARGV]);
     parseInput();
+    checkUnknownDatatypes();
     resolveClassPropertyValues();
     outputOntology($ARGV[0], $ARGV[1]);
 }
@@ -65,7 +71,7 @@ sub parseInput {
 # 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedWord {
     # 予約語配列
-    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time");
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear");
 
     return checkWord(\@rsvky, $_);
 }
@@ -115,6 +121,25 @@ sub isSystemProperty {
 
 # 予約クラスのチェック
 # 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
+# 属性の次の列（値域の列）に名前だけを書き、その右に何も無いものが、データ型の予約語でも、シートか
+# 系のオントロジーで定義された属性（下位属性の書き方）でもなければ、知らないデータ型の名前かもしれない
+# ので知らせる。黙って属性と読むと、値域の無い属性と、どこにも定義の無い下位属性ができる（plrDart の
+# review の頼み、2026-11-16）。ほかのオントロジーで定義された属性を下位属性に書くこともあるので、止めずに
+# 知らせる（系のオントロジーを渡せば、系の属性は知らせない）
+sub checkUnknownDatatypes {
+	my %seen;
+	my @errors;
+	foreach my $c (@bareRangeNames) {
+		my ($id, $prop, $line) = @$c;
+		next if ($labelledProps{"#$id"} || isSystemProperty($id));
+		next if ($seen{"$prop $id"}++);
+		push(@errors, "Warning: unknown datatype or undefined sub-property `$id' in the range of property `$prop'"
+			. " at line $line (not a datatype of cto.pl nor a property defined in this sheet"
+			. (%systemProps ? " or the system ontology" : "; no system ontology is given") . ")\n");
+	}
+	print STDERR join('', @errors);
+}
+
 sub checkReservedClass {
     # 予約クラス
     my @rsvcls = ("Channel", "DataSetting", "PlrId");
@@ -240,6 +265,12 @@ sub extract {
 					parsePropertyParams($id, $prop);
 				}
 				else {
+					# 属性の次の列に名前だけを書き、その右に何も無い：下位属性か、知らないデータ型の名前
+					# （全部読んでから見分ける）。右に列があれば（さらに下位の属性・値域）、下位属性の定義である
+					my $next = $$fields[$autoClassCount];
+					push(@bareRangeNames, [$id, $prop->{'@id'}, $lc])
+						if ($prop && !defined($label) && /^[a-z][A-Za-z0-9_]*$/
+							&& (!defined($next) || $next eq '' || $next =~ /^\\/));
 					# ここは直近のクラス$clsを引数にする
 					$prop = $res = parseProperty($id, $label, $cls, $prop);
 
@@ -466,6 +497,7 @@ sub parseProperty {
     $propType =~ s/^([a-zA-Z0-9_]+)//;
     $id = "#$1";
     $propType =~ s/^@//;
+    $labelledProps{$id} = 1 if (defined($label) && $label ne '');
 
     my $prop = $typeMap{$id};
     if ($prop) {
