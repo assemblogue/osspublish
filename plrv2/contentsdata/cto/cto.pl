@@ -10,13 +10,11 @@ use JSON;
 use Encode qw/encode_utf8 decode_utf8/;
 use Data::Dumper;
 
-# 3つ目からの引数は、系のオントロジー（plrDart の sample/system の Ontology.jsonld・
-# Base.jsonld など）の JSON-LD。linkPath の道に書いた属性が系で定義されているかを、
-# ここから集めた属性の ID で確かめる（isSystemProperty）。無ければシートの中だけで確かめる。
-# ラベルの無いクラス・属性の知らせ（checkLabels）も、ここで定義されたものへの参照は知らせない。
-# 渡すのは任意で、渡さなくても動く（知らせの数が増えるだけ）
-die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
-    if (@ARGV < 2);
+# 表だけを読む。ほかのオントロジー（系の Base・Ontology など）は読まない——表で定義するクラス・属性には
+# ラベルを付けるので、ラベルの無い名前は、ほかのオントロジーへの参照か書き誤りとして知らせる（checkLabels。
+# 橋田さんの決め、plrDart の review 経由、2026-11-16）
+die("usage: cto.pl ontologyName prefix\n")
+    unless (@ARGV == 2);
 
 #
 # typeMap 生成済みクラス・プロパティを保存　最終出力はこれ
@@ -25,8 +23,6 @@ die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
 my @types, %typeMap, @OMap;
 # "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
 my @classValues;
-# 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
-my %systemProps;
 # ラベルを添えて定義した属性・クラスの ID（# 付き）。表で定義するクラス・属性にはラベルを付けるので、
 # どこにもラベルの無い名前は、ほかのオントロジーで定義されたものへの参照か、書き誤りである（checkLabels）
 my %labelledProps;
@@ -34,8 +30,6 @@ my %labelledClasses;
 # 表に書いたクラス・属性の名前（# を外したもの）→ [種類 'class'・'property', 最初に書いた行]
 my %namesWritten;
 my @namesWrittenOrder;
-# 系のオントロジー（3つ目からの引数）で定義されているクラスの ID（# を外したもの）
-my %systemClasses;
 # 属性の次の列に書いた、XML Schema の組込のデータ型のうち PLR がサポートしないもの（[名前, 属性の ID, 行]）。
 # checkLabels が、ラベルの無い名前とは別の文で知らせる
 my @unsupportedRangeNames;
@@ -64,10 +58,10 @@ my $mode;
 my $autoClassCount = 0;
 
 MAIN: {
-    readSystemOntologies(@ARGV[2 .. $#ARGV]);
     parseInput();
-    checkLabels();
+    # linkPath の道の属性も、ラベルの無い名前として数えるので、値を解いてから見る
     resolveClassPropertyValues();
+    checkLabels();
     outputOntology($ARGV[0], $ARGV[1]);
 }
 
@@ -113,41 +107,6 @@ sub isReservedProperty {
     return scalar(grep { $_ eq $id } @rsvprop);
 }
 
-# 系のオントロジーの JSON-LD のファイル [@files] を読み、定義されている属性
-# （@type が Class でないもの）の ID を %systemProps に集める
-sub readSystemOntologies {
-	my @files = @_;
-	foreach my $file (@files) {
-		die("Error: failed to open system ontology `$file': $!\n")
-			unless (open(my $f, '<:raw', $file));
-		my $text = do { local $/; <$f> };
-		close($f);
-		my $o = eval { JSON->new->utf8->decode($text) };
-		die("Error: failed to read system ontology `$file': $@")
-			unless (defined($o));
-		# 制限のファイル（*_restriction.jsonld）など、defines を持たないものは系の
-		# オントロジーでない
-		die("Error: system ontology `$file' has no `defines'\n")
-			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
-		foreach my $d (@{$o->{'defines'}}) {
-			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
-			(my $id = $d->{'@id'}) =~ s/^#//;
-			if (($d->{'@type'} // '') eq 'Class') {
-				$systemClasses{$id} = 1;
-				next;
-			}
-			$systemProps{$id} = 1;
-		}
-	}
-}
-
-# 系（readSystemOntologies で読んだオントロジー）で定義されている属性のチェック。
-# linkPath の道に書けるのは、シートか系で定義されている属性だけである
-sub isSystemProperty {
-	my ($id) = @_;
-	return exists($systemProps{$id});
-}
-
 # 表に書いたクラス・属性の名前を、最初に書いた行とともに覚える（checkLabels が見る）
 sub noteNameWritten {
 	my ($kind, $name, $line) = @_;
@@ -158,30 +117,28 @@ sub noteNameWritten {
 }
 
 # **表で定義するクラス・属性にはラベルを付ける。** したがって、表のどこにもラベルの無いクラス・属性の
-# 名前で、渡されたオントロジー（3つ目からの引数）でも定義されていないものは、ほかのオントロジーで定義
-# されたものへの参照か、書き誤りである——名前と行を挙げて知らせる（属性は値域の列に書いた下位属性の
-# 名前も、クラスは値域・定義域・上位クラスに書いた名前も、同じ1つの決まり）。Base などを渡すのは任意で、
-# 渡せばそこで定義されたものへの参照は知らせない。値域の列に書いた、PLR がサポートしない XML Schema の
+# 名前は、ほかのオントロジーで定義されたものへの参照か、書き誤りである——名前と行を挙げて知らせる
+# （属性は値域の列に書いた下位属性の名前と linkPath の道の属性も、クラスは値域・定義域・上位クラスに
+# 書いた名前も、同じ1つの決まり）。変換は続ける。値域の列に書いた、PLR がサポートしない XML Schema の
 # データ型は、別の文で、代わりのデータ型を添えて知らせる（橋田さんの決め、plrDart の review 経由、2026-11-16）
 sub checkLabels {
 	my @warnings;
 	foreach my $name (@namesWrittenOrder) {
 		my ($kind, $line) = @{$namesWritten{$name}};
 		if ($kind eq 'class') {
-			next if ($labelledClasses{"#$name"} || $systemClasses{$name} || checkWord(['Channel', 'DataSetting', 'PlrId'], $name));
+			next if ($labelledClasses{"#$name"} || checkWord(['Channel', 'DataSetting', 'PlrId'], $name));
 		}
 		else {
-			next if ($labelledProps{"#$name"} || isSystemProperty($name) || isReservedProperty($name));
+			next if ($labelledProps{"#$name"} || isReservedProperty($name));
 		}
-		push(@warnings, "Warning: $kind `$name' (first written at line $line) has no label in this sheet"
-			. (%systemProps || %systemClasses ? " nor in the given ontologies" : " (no ontology is given)")
-			. ": a reference to another ontology, or a misspelling\n");
+		push(@warnings, "Warning: $kind `$name' (first written at line $line) has no label in this sheet:"
+			. " a reference to another ontology, or a misspelling\n");
 	}
 	my %seen;
 	foreach my $c (@unsupportedRangeNames) {
 		my ($id, $prop, $line) = @$c;
-		# 同じ名前を、表か渡されたオントロジーでクラス・属性として定義していれば、データ型ではない
-		next if ($labelledProps{"#$id"} || $labelledClasses{"#$id"} || isSystemProperty($id) || $systemClasses{$id});
+		# 同じ名前を、表でクラス・属性として定義していれば、データ型ではない
+		next if ($labelledProps{"#$id"} || $labelledClasses{"#$id"});
 		next if ($seen{"$prop $id"}++);
 		my $instead = $unsupportedXsdDatatypes{$id};
 		push(@warnings, "Warning: `$id' in the range of property `$prop' at line $line is an XML Schema datatype"
@@ -478,7 +435,8 @@ sub resolveClassPropertyValues {
 # 歩みの形は SHACL の属性の道に合わせ、順向きは属性の ID、逆向きは inversePath で包む。
 # 例："truthValue -isTrue" →
 #   {"@list": [{"@id": "#truthValue"}, {"inversePath": {"@id": "#isTrue"}}]}
-# 道に書いた属性が、シートにも系（isSystemProperty）にも定義されていなければエラー
+# 道の形の誤り（空の道・- の後に何も無い・属性の所にクラスの名前）はエラーで止める。道の属性に表の中の
+# ラベルの定義が無ければ、ほかの名前と同じく、ラベルの無い属性として知らせる（noteNameWritten・checkLabels）
 sub resolveLinkPath {
 	my ($val, $line) = @_;
 	my @steps;
@@ -489,12 +447,10 @@ sub resolveLinkPath {
 		die("Error: no property after `-' in `| linkPath' at line $line\n")
 			if ($s eq '');
 		my $p = $typeMap{"#$s"};
-		# 系のオントロジーを渡していなければ、系の属性も定義の無い属性になる（app.rb は
-		# 渡していない）ので、そのことを添える
-		die("Error: undefined property `$s' in `| linkPath' at line $line"
-			. (%systemProps ? '' : ' (no system ontology is given, so system properties are not defined)')
-			. "\n")
-			unless (($p && $p->{'@type'} ne "Class") || isSystemProperty($s));
+		# クラスの名前：表でクラスとして定義したもの、またはクラスの書き方（大文字か _ で始まる）
+		die("Error: class `$s' in `| linkPath' at line $line (write a property)\n")
+			if (($p && $p->{'@type'} eq "Class") || $s =~ /^_?[A-Z]/);
+		noteNameWritten('property', $s, $line);
 		my $step = { '@id' => "#$s" };
 		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
 	}
