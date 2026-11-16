@@ -4,14 +4,14 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 30;
+use Test::More tests => 33;
 
 sub run_command {
 	my $command = shift;
 	my $content = shift;
 	my $dir = shift;
 	my $prefix = shift;
-	# 残りの引数は系のオントロジーのファイル。エラーの文は $dir/$prefix.err に残す
+	# 残りの引数はそのまま渡す（使い方の誤りの試験）。エラーの文は $dir/$prefix.err に残す
 	my $pid = open2(my $child_in, my $child_out, join(' ', "$^X ./$command $dir/$prefix $prefix", @_, "2>$dir/$prefix.err")) or die "$!";
 	print $child_out $content;
 	close $child_in;
@@ -21,16 +21,6 @@ sub run_command {
 }
 
 my $dir = tempdir('/tmp/plrtest_XXXX');
-
-# 系のオントロジー（linkPath の道の属性を確かめるのに渡す。plrDart の
-# sample/system/Ontology.jsonld の形を小さくしたもの）
-my $systemOntology = "$dir/plrTest_system.jsonld";
-{
-	open(my $f, '>', $systemOntology) or die "$!";
-	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
-		. ' {"@id": "#Constraint", "@type": "Class"}]}';
-	close($f);
-}
 
 {
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_hyphen');
@@ -167,12 +157,12 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 	# 系の予約属性 linkPath（plrDart の追記R971・R972）：arg1 から arg2 へたどる属性の
 	# ID を空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では歩みの @list に
 	# し、歩みは SHACL の属性の道の形（順向きは # 付きの ID、逆向きは inversePath で
-	# 包む）にする。道の属性は、シートか、引数で渡した系のオントロジーで
-	# 定義されているもの
-	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path', $systemOntology);
+	# 包む）にする。道の属性に表の中のラベルの定義が無ければ（系の属性 truthValue など）、
+	# ラベルの無い属性として知らせ、変換は続ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path');
 	"]O DG ja:議論;DG",\オントロジー,,,
-	Issue,conjSubIssue,Issue,,
-	Answer,isTrue,boolean,,
+	Issue,conjSubIssue ja:連言の下位;conj sub,Issue,,
+	Answer,isTrue ja:真か;is true,boolean,,
 	GraphRelation,,,,
 	,ConjSubIssue,| linkPath,conjSubIssue,
 	,Then,| linkPath,truthValue -isTrue,
@@ -188,22 +178,34 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 												 {'inversePath' => {'@id' => '#isTrue'}}]},
 						'linkPath of two steps with an inverse one');
 	ok(!exists($d{'#linkPath'}), 'linkPath is not declared');
+	my $err = errorText('plrTest_link_path');
+	like($err, qr/Warning: property `truthValue' .*has no label/, 'linkPath: a property without a label is warned');
+	unlike($err, qr/`(conjSubIssue|isTrue)' .*has no label/, 'linkPath: properties labelled in the sheet are not warned');
 }
 
-# linkPath の道に、定義の無い属性やクラスを書くとエラー（出力を作らない）。系の
-# オントロジーを渡さなければ、系の属性も定義の無い属性になる
+# linkPath の道の属性の所に、表でクラスとして定義した名前を書くとエラー（出力を作らない）
 foreach my $case (
-	['plrTest_link_path_undef', ",Typo,| linkPath,truthValue -conjSubIsue,\n", 'undefined property in linkPath', $systemOntology],
-	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath', $systemOntology],
-	['plrTest_link_path_sysclass', ",SysCls,| linkPath,Constraint,\n", 'system class in linkPath', $systemOntology],
-	['plrTest_link_path_nosys', ",Sys,| linkPath,truthValue,\n", 'system property without the system ontology'],
+	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath'],
 ) {
-	my ($prefix, $row, $name, @system) = @$case;
+	my ($prefix, $row, $name) = @$case;
 	run_command('cto.pl',
 		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
-		$dir, $prefix, @system);
+		$dir, $prefix);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
+
+# linkPath の道に、表に定義の無い属性（書き誤り）を書くと、知らせて変換は続ける
+run_command('cto.pl',
+	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue ja:連言の下位;conj sub,Issue,,\nGraphRelation,,,,\n,Typo,| linkPath,conjSubIsue,\n",
+	$dir, 'plrTest_link_path_typo');
+ok($? == 0 && -e "$dir/plrTest_link_path_typo.jsonld", 'linkPath: an undefined property does not stop the conversion');
+# 表に無い名前は、大文字で始まっても（系のクラス Constraint など）、綴りでは見分けず、ラベルの無い属性として
+# 知らせて変換は続ける
+run_command('cto.pl',
+	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue ja:連言の下位;conj sub,Issue,,\nGraphRelation,,,,\n,SysCls,| linkPath,Constraint,\n",
+	$dir, 'plrTest_link_path_sysclass');
+ok($? == 0 && -e "$dir/plrTest_link_path_sysclass.jsonld", 'linkPath: a name not in the sheet does not stop the conversion even if it starts with a capital');
+like(errorText('plrTest_link_path_sysclass'), qr/Warning: property `Constraint' .*has no label/, 'warning text: a name not in the sheet in linkPath');
 
 # エラーの文が、どこを直せばよいかを言う
 sub errorText {
@@ -215,21 +217,13 @@ sub errorText {
 # - だけの歩みは「- の後に属性が無い」
 run_command('cto.pl',
 	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n,Dash,| linkPath,conjSubIssue -,\n",
-	$dir, 'plrTest_link_path_dash', $systemOntology);
+	$dir, 'plrTest_link_path_dash');
 like(errorText('plrTest_link_path_dash'), qr/no property after `-'/, 'error text: "-" without a property');
-# 系のオントロジーを渡さずに系の属性を書くと、渡していないことを添える
-like(errorText('plrTest_link_path_nosys'), qr/no system ontology is given/, 'error text: no system ontology');
-# defines を持たない JSON-LD（制限のファイルなど）を渡すと、そう言う
-{
-	my $restriction = "$dir/plrTest_system_restriction.jsonld";
-	open(my $f, '>', $restriction) or die "$!";
-	print $f '{"@id": "ONTO", "restrictions": []}';
-	close($f);
-	run_command('cto.pl',
-		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\n",
-		$dir, 'plrTest_system_no_defines', $restriction);
-	like(errorText('plrTest_system_no_defines'), qr/has no `defines'/, 'error text: system ontology without defines');
-}
+like(errorText('plrTest_link_path_typo'), qr/Warning: property `conjSubIsue' .*has no label/, 'warning text: undefined property in linkPath');
+like(errorText('plrTest_link_path_class'), qr/class `Issue' in `\| linkPath'/, 'error text: class in linkPath');
+# ほかのオントロジーは読まない：3つ目からの引数は使い方の誤り
+run_command('cto.pl', "\"]O DG ja:議論;DG\",\\オントロジー,,,\n", $dir, 'plrTest_extra_args', 'Base.jsonld');
+ok($? != 0 && !-e "$dir/plrTest_extra_args.jsonld", 'error: an extra argument');
 
 # 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
 foreach my $case (
