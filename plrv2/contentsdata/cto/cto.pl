@@ -13,8 +13,8 @@ use Data::Dumper;
 # 3つ目からの引数は、系のオントロジー（plrDart の sample/system の Ontology.jsonld・
 # Base.jsonld など）の JSON-LD。linkPath の道に書いた属性が系で定義されているかを、
 # ここから集めた属性の ID で確かめる（isSystemProperty）。無ければシートの中だけで確かめる。
-# 値域の列の知らない型の確かめ（checkUnknownDatatypes）も、系の属性を下位属性に書いたものを
-# 知らせないために、これを読む。どの表も Base の上に書くので、Base.jsonld（と Ontology.jsonld）を渡す
+# ラベルの無いクラス・属性の知らせ（checkLabels）も、ここで定義されたものへの参照は知らせない。
+# 渡すのは任意で、渡さなくても動く（知らせの数が増えるだけ）
 die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
     if (@ARGV < 2);
 
@@ -27,11 +27,35 @@ my @types, %typeMap, @OMap;
 my @classValues;
 # 系のオントロジーで定義されている属性の ID（# を外したもの）。readSystemOntologies が集める
 my %systemProps;
-# ラベルを添えて定義した属性の ID（# 付き）。checkUnknownDatatypes が、値域の列の名前が属性かを見る
+# ラベルを添えて定義した属性・クラスの ID（# 付き）。表で定義するクラス・属性にはラベルを付けるので、
+# どこにもラベルの無い名前は、ほかのオントロジーで定義されたものへの参照か、書き誤りである（checkLabels）
 my %labelledProps;
-# 属性の次の列に、ラベルも印も無く名前だけを書いたもの（[名前, 属性の ID, 行]）。データ型の予約語でなく、
-# 属性として定義されてもいなければ、知らないデータ型の名前である（checkUnknownDatatypes）
-my @bareRangeNames;
+my %labelledClasses;
+# 表に書いたクラス・属性の名前（# を外したもの）→ [種類 'class'・'property', 最初に書いた行]
+my %namesWritten;
+my @namesWrittenOrder;
+# 系のオントロジー（3つ目からの引数）で定義されているクラスの ID（# を外したもの）
+my %systemClasses;
+# 属性の次の列に書いた、XML Schema の組込のデータ型のうち PLR がサポートしないもの（[名前, 属性の ID, 行]）。
+# checkLabels が、ラベルの無い名前とは別の文で知らせる
+my @unsupportedRangeNames;
+# XML Schema 1.1 の組込のデータ型のうち、予約語（checkReservedWord。PLR が持つデータ型で、plrDart の
+# _plr_common の組込のデータ型と同じ集まり）に無いもの。
+# 値は、代わりに使う PLR のデータ型（無ければ空）
+my %unsupportedXsdDatatypes = (
+	"double" => "decimal", "float" => "decimal",
+	"long" => "integer", "int" => "integer", "short" => "integer", "byte" => "integer",
+	"unsignedLong" => "nonNegativeInteger", "unsignedInt" => "nonNegativeInteger",
+	"unsignedShort" => "nonNegativeInteger", "unsignedByte" => "nonNegativeInteger",
+	"normalizedString" => "string", "token" => "string", "language" => "string",
+	"Name" => "string", "NCName" => "string", "NMTOKEN" => "string", "NMTOKENS" => "string",
+	"ID" => "string", "IDREF" => "string", "IDREFS" => "string",
+	"ENTITY" => "string", "ENTITIES" => "string", "QName" => "string", "NOTATION" => "string",
+	"gYearMonth" => "", "gMonthDay" => "", "gDay" => "", "gMonth" => "",
+	"hexBinary" => "", "base64Binary" => "",
+	"yearMonthDuration" => "duration", "dayTimeDuration" => "duration",
+	"dateTimeStamp" => "dateTime", "anySimpleType" => "", "anyAtomicType" => "",
+);
 my $mode;
 
 
@@ -42,7 +66,7 @@ my $autoClassCount = 0;
 MAIN: {
     readSystemOntologies(@ARGV[2 .. $#ARGV]);
     parseInput();
-    checkUnknownDatatypes();
+    checkLabels();
     resolveClassPropertyValues();
     outputOntology($ARGV[0], $ARGV[1]);
 }
@@ -73,7 +97,7 @@ sub parseInput {
 # 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedWord {
     # 予約語配列
-    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear");
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "anyURI", "nonPositiveInteger", "negativeInteger");
 
     return checkWord(\@rsvky, $_);
 }
@@ -107,8 +131,11 @@ sub readSystemOntologies {
 			unless (ref($o) eq 'HASH' && ref($o->{'defines'}) eq 'ARRAY');
 		foreach my $d (@{$o->{'defines'}}) {
 			next unless (ref($d) eq 'HASH' && defined($d->{'@id'}));
-			next if (($d->{'@type'} // '') eq 'Class');
 			(my $id = $d->{'@id'}) =~ s/^#//;
+			if (($d->{'@type'} // '') eq 'Class') {
+				$systemClasses{$id} = 1;
+				next;
+			}
 			$systemProps{$id} = 1;
 		}
 	}
@@ -121,24 +148,46 @@ sub isSystemProperty {
 	return exists($systemProps{$id});
 }
 
-# 属性の次の列（値域の列）に名前だけを書き、その右に何も無いものが、データ型の予約語でも、シートか
-# 系のオントロジーで定義された属性（下位属性の書き方）でもなければ、知らないデータ型の名前かもしれない
-# ので知らせる。黙って属性と読むと、値域の無い属性と、どこにも定義の無い下位属性ができる（plrDart の
-# review の頼み、2026-11-16）。ほかのオントロジーで定義された属性を下位属性に書くこともあるので、止めずに
-# 知らせる（系のオントロジーを渡せば、系の属性は知らせない）
-sub checkUnknownDatatypes {
-	my %seen;
-	my @errors;
-	foreach my $c (@bareRangeNames) {
-		my ($id, $prop, $line) = @$c;
-		next if ($labelledProps{"#$id"} || isSystemProperty($id));
-		next if ($seen{"$prop $id"}++);
-		push(@errors, "Warning: unknown datatype or undefined sub-property `$id' in the range of property `$prop'"
-			. " at line $line (not a datatype of cto.pl nor a property defined in this sheet"
-			. (%systemProps ? " or the system ontology"
-				: "; no system ontology is given: pass Base.jsonld (and Ontology.jsonld) after the prefix") . ")\n");
+# 表に書いたクラス・属性の名前を、最初に書いた行とともに覚える（checkLabels が見る）
+sub noteNameWritten {
+	my ($kind, $name, $line) = @_;
+	return unless (defined($name) && $name ne '');
+	return if (exists($namesWritten{$name}));
+	$namesWritten{$name} = [$kind, $line];
+	push(@namesWrittenOrder, $name);
+}
+
+# **表で定義するクラス・属性にはラベルを付ける。** したがって、表のどこにもラベルの無いクラス・属性の
+# 名前で、渡されたオントロジー（3つ目からの引数）でも定義されていないものは、ほかのオントロジーで定義
+# されたものへの参照か、書き誤りである——名前と行を挙げて知らせる（属性は値域の列に書いた下位属性の
+# 名前も、クラスは値域・定義域・上位クラスに書いた名前も、同じ1つの決まり）。Base などを渡すのは任意で、
+# 渡せばそこで定義されたものへの参照は知らせない。値域の列に書いた、PLR がサポートしない XML Schema の
+# データ型は、別の文で、代わりのデータ型を添えて知らせる（橋田さんの決め、plrDart の review 経由、2026-11-16）
+sub checkLabels {
+	my @warnings;
+	foreach my $name (@namesWrittenOrder) {
+		my ($kind, $line) = @{$namesWritten{$name}};
+		if ($kind eq 'class') {
+			next if ($labelledClasses{"#$name"} || $systemClasses{$name} || checkWord(['Channel', 'DataSetting', 'PlrId'], $name));
+		}
+		else {
+			next if ($labelledProps{"#$name"} || isSystemProperty($name) || isReservedProperty($name));
+		}
+		push(@warnings, "Warning: $kind `$name' (first written at line $line) has no label in this sheet"
+			. (%systemProps || %systemClasses ? " nor in the given ontologies" : " (no ontology is given)")
+			. ": a reference to another ontology, or a misspelling\n");
 	}
-	print STDERR join('', @errors);
+	my %seen;
+	foreach my $c (@unsupportedRangeNames) {
+		my ($id, $prop, $line) = @$c;
+		# 同じ名前を、表か渡されたオントロジーでクラス・属性として定義していれば、データ型ではない
+		next if ($labelledProps{"#$id"} || $labelledClasses{"#$id"} || isSystemProperty($id) || $systemClasses{$id});
+		next if ($seen{"$prop $id"}++);
+		my $instead = $unsupportedXsdDatatypes{$id};
+		push(@warnings, "Warning: `$id' in the range of property `$prop' at line $line is an XML Schema datatype"
+			. " that PLR does not support" . ($instead ? " (use $instead)" : "") . "\n");
+	}
+	print STDERR join('', @warnings);
 }
 
 # 予約クラスのチェック
@@ -249,6 +298,14 @@ sub extract {
 			elsif (/^_?[A-Z]/ || /^_[a-z]/) {
 				# Class
 				my ($id, $label) = split(/[ \n]+/, $_, 2);
+				my ($name) = ($id =~ /^([\w\.\-]+)/);
+				if ($prop && defined($name) && exists($unsupportedXsdDatatypes{$name})) {
+					# 値域の列の、PLR がサポートしない XML Schema のデータ型（Name・ID など大文字で始まるもの）
+					push(@unsupportedRangeNames, [$name, $prop->{'@id'}, $lc]);
+				}
+				else {
+					noteNameWritten('class', $name, $lc);
+				}
 
 				$cls = $res = parseClass($id, $label, $pcls);
 				$pcls = $cls;
@@ -267,13 +324,15 @@ sub extract {
 					# range 一個前のプロパティに設定する
 					parsePropertyParams($id, $prop);
 				}
+				elsif ($prop && /^([A-Za-z0-9_]+)/ && exists($unsupportedXsdDatatypes{$1})) {
+					# XML Schema のデータ型だが PLR がサポートしないもの（下位属性として定義されていれば
+					# 数えない。全部読んでから見分ける）。属性としても読む（前と同じ出力にする）
+					push(@unsupportedRangeNames, [$1, $prop->{'@id'}, $lc]);
+					$prop = $res = parseProperty($id, $label, $cls, $prop);
+					$pcls = "";
+				}
 				else {
-					# 属性の次の列に名前だけを書き、その右に何も無い：下位属性か、知らないデータ型の名前
-					# （全部読んでから見分ける）。右に列があれば（さらに下位の属性・値域）、下位属性の定義である
-					my $next = $$fields[$autoClassCount];
-					push(@bareRangeNames, [$id, $prop->{'@id'}, $lc])
-						if ($prop && !defined($label) && /^[a-z][A-Za-z0-9_]*$/
-							&& (!defined($next) || $next eq '' || $next =~ /^\\/));
+					noteNameWritten('property', (/^([A-Za-z0-9_]+)/)[0], $lc);
 					# ここは直近のクラス$clsを引数にする
 					$prop = $res = parseProperty($id, $label, $cls, $prop);
 
@@ -375,6 +434,7 @@ sub parseClass {
 
 	parseClassIdParams($cls, $id, $idParams);
 	parseLabel($cls, $label);
+	$labelledClasses{$id} = 1 if (defined($label) && $label ne '');
 
 	# 上位クラスがある場合(上位クラス複数あり得る)
 	if ($pcls) {
