@@ -35,12 +35,12 @@ my @bareRangeNames;
 # 属性の次の列に書いた、XML Schema の組込のデータ型のうち PLR がサポートしないもの（[名前, 属性の ID, 行]）。
 # checkUnknownDatatypes が、知らない名前とは別の文で知らせる
 my @unsupportedRangeNames;
-# XML Schema 1.1 の組込のデータ型のうち、予約語（checkReservedWord。PLR が持つデータ型）に無いもの。
+# XML Schema 1.1 の組込のデータ型のうち、予約語（checkReservedWord。PLR が持つデータ型で、plrDart の
+# _plr_common の組込のデータ型と同じ集まり）に無いもの。
 # 値は、代わりに使う PLR のデータ型（無ければ空）
 my %unsupportedXsdDatatypes = (
 	"double" => "decimal", "float" => "decimal",
 	"long" => "integer", "int" => "integer", "short" => "integer", "byte" => "integer",
-	"nonPositiveInteger" => "integer", "negativeInteger" => "integer",
 	"unsignedLong" => "nonNegativeInteger", "unsignedInt" => "nonNegativeInteger",
 	"unsignedShort" => "nonNegativeInteger", "unsignedByte" => "nonNegativeInteger",
 	"normalizedString" => "string", "token" => "string", "language" => "string",
@@ -93,7 +93,7 @@ sub parseInput {
 # 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedWord {
     # 予約語配列
-    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "anyURI");
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "anyURI", "nonPositiveInteger", "negativeInteger");
 
     return checkWord(\@rsvky, $_);
 }
