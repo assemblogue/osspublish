@@ -12,7 +12,9 @@ use Data::Dumper;
 
 # 3つ目からの引数は、系のオントロジー（plrDart の sample/system の Ontology.jsonld・
 # Base.jsonld など）の JSON-LD。linkPath の道に書いた属性が系で定義されているかを、
-# ここから集めた属性の ID で確かめる（isSystemProperty）。無ければシートの中だけで確かめる
+# ここから集めた属性の ID で確かめる（isSystemProperty）。無ければシートの中だけで確かめる。
+# 値域の列の知らない型の確かめ（checkUnknownDatatypes）も、系の属性を下位属性に書いたものを
+# 知らせないために、これを読む。どの表も Base の上に書くので、Base.jsonld（と Ontology.jsonld）を渡す
 die("usage: cto.pl ontologyName prefix [systemOntology.jsonld ...]")
     if (@ARGV < 2);
 
@@ -135,7 +137,8 @@ sub checkUnknownDatatypes {
 		next if ($seen{"$prop $id"}++);
 		push(@errors, "Warning: unknown datatype or undefined sub-property `$id' in the range of property `$prop'"
 			. " at line $line (not a datatype of cto.pl nor a property defined in this sheet"
-			. (%systemProps ? " or the system ontology" : "; no system ontology is given") . ")\n");
+			. (%systemProps ? " or the system ontology"
+				: "; no system ontology is given: pass Base.jsonld (and Ontology.jsonld) after the prefix") . ")\n");
 	}
 	print STDERR join('', @errors);
 }
