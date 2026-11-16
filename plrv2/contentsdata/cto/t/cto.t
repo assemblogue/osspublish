@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 32;
+use Test::More tests => 33;
 
 sub run_command {
 	my $command = shift;
@@ -183,10 +183,9 @@ my $dir = tempdir('/tmp/plrtest_XXXX');
 	unlike($err, qr/`(conjSubIssue|isTrue)' .*has no label/, 'linkPath: properties labelled in the sheet are not warned');
 }
 
-# linkPath の道の属性の所にクラスの名前（表のクラス・大文字で始まる名前）を書くとエラー（出力を作らない）
+# linkPath の道の属性の所に、表でクラスとして定義した名前を書くとエラー（出力を作らない）
 foreach my $case (
 	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath'],
-	['plrTest_link_path_sysclass', ",SysCls,| linkPath,Constraint,\n", 'class not in the sheet in linkPath'],
 ) {
 	my ($prefix, $row, $name) = @$case;
 	run_command('cto.pl',
@@ -200,6 +199,13 @@ run_command('cto.pl',
 	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue ja:連言の下位;conj sub,Issue,,\nGraphRelation,,,,\n,Typo,| linkPath,conjSubIsue,\n",
 	$dir, 'plrTest_link_path_typo');
 ok($? == 0 && -e "$dir/plrTest_link_path_typo.jsonld", 'linkPath: an undefined property does not stop the conversion');
+# 表に無い名前は、大文字で始まっても（系のクラス Constraint など）、綴りでは見分けず、ラベルの無い属性として
+# 知らせて変換は続ける
+run_command('cto.pl',
+	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue ja:連言の下位;conj sub,Issue,,\nGraphRelation,,,,\n,SysCls,| linkPath,Constraint,\n",
+	$dir, 'plrTest_link_path_sysclass');
+ok($? == 0 && -e "$dir/plrTest_link_path_sysclass.jsonld", 'linkPath: a name not in the sheet does not stop the conversion even if it starts with a capital');
+like(errorText('plrTest_link_path_sysclass'), qr/Warning: property `Constraint' .*has no label/, 'warning text: a name not in the sheet in linkPath');
 
 # エラーの文が、どこを直せばよいかを言う
 sub errorText {

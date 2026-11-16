@@ -447,9 +447,10 @@ sub resolveLinkPath {
 		die("Error: no property after `-' in `| linkPath' at line $line\n")
 			if ($s eq '');
 		my $p = $typeMap{"#$s"};
-		# クラスの名前：表でクラスとして定義したもの、またはクラスの書き方（大文字か _ で始まる）
+		# 表でクラスとして定義した名前は止める。表に無い名前は、系のクラスか書き誤りかは分からないので、
+		# ほかの名前と同じく、ラベルの無い属性として知らせる（綴りでは見分けない）
 		die("Error: class `$s' in `| linkPath' at line $line (write a property)\n")
-			if (($p && $p->{'@type'} eq "Class") || $s =~ /^_?[A-Z]/);
+			if ($p && $p->{'@type'} eq "Class");
 		noteNameWritten('property', $s, $line);
 		my $step = { '@id' => "#$s" };
 		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
