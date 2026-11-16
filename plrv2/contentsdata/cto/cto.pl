@@ -32,6 +32,26 @@ my %labelledProps;
 # 属性の次の列に、ラベルも印も無く名前だけを書いたもの（[名前, 属性の ID, 行]）。データ型の予約語でなく、
 # 属性として定義されてもいなければ、知らないデータ型の名前である（checkUnknownDatatypes）
 my @bareRangeNames;
+# 属性の次の列に書いた、XML Schema の組込のデータ型のうち PLR がサポートしないもの（[名前, 属性の ID, 行]）。
+# checkUnknownDatatypes が、知らない名前とは別の文で知らせる
+my @unsupportedRangeNames;
+# XML Schema 1.1 の組込のデータ型のうち、予約語（checkReservedWord。PLR が持つデータ型）に無いもの。
+# 値は、代わりに使う PLR のデータ型（無ければ空）
+my %unsupportedXsdDatatypes = (
+	"double" => "decimal", "float" => "decimal",
+	"long" => "integer", "int" => "integer", "short" => "integer", "byte" => "integer",
+	"nonPositiveInteger" => "integer", "negativeInteger" => "integer",
+	"unsignedLong" => "nonNegativeInteger", "unsignedInt" => "nonNegativeInteger",
+	"unsignedShort" => "nonNegativeInteger", "unsignedByte" => "nonNegativeInteger",
+	"normalizedString" => "string", "token" => "string", "language" => "string",
+	"Name" => "string", "NCName" => "string", "NMTOKEN" => "string", "NMTOKENS" => "string",
+	"ID" => "string", "IDREF" => "string", "IDREFS" => "string",
+	"ENTITY" => "string", "ENTITIES" => "string", "QName" => "string", "NOTATION" => "string",
+	"gYearMonth" => "", "gMonthDay" => "", "gDay" => "", "gMonth" => "",
+	"hexBinary" => "", "base64Binary" => "",
+	"yearMonthDuration" => "duration", "dayTimeDuration" => "duration",
+	"dateTimeStamp" => "dateTime", "anySimpleType" => "", "anyAtomicType" => "",
+);
 my $mode;
 
 
@@ -73,7 +93,7 @@ sub parseInput {
 # 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedWord {
     # 予約語配列
-    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear");
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "anyURI");
 
     return checkWord(\@rsvky, $_);
 }
@@ -137,6 +157,14 @@ sub checkUnknownDatatypes {
 			. " at line $line (not a datatype of cto.pl nor a property defined in this sheet"
 			. (%systemProps ? " or the system ontology"
 				: "; no system ontology is given: pass Base.jsonld (and Ontology.jsonld) after the prefix") . ")\n");
+	}
+	foreach my $c (@unsupportedRangeNames) {
+		my ($id, $prop, $line) = @$c;
+		next if ($labelledProps{"#$id"} || isSystemProperty($id));
+		next if ($seen{"$prop $id"}++);
+		my $instead = $unsupportedXsdDatatypes{$id};
+		push(@errors, "Warning: `$id' in the range of property `$prop' at line $line is an XML Schema datatype"
+			. " that PLR does not support" . ($instead ? " (use $instead)" : "") . "\n");
 	}
 	print STDERR join('', @errors);
 }
@@ -266,6 +294,13 @@ sub extract {
 				if (checkReservedWord($id)) {
 					# range 一個前のプロパティに設定する
 					parsePropertyParams($id, $prop);
+				}
+				elsif ($prop && /^([A-Za-z0-9_]+)/ && exists($unsupportedXsdDatatypes{$1})) {
+					# XML Schema のデータ型だが PLR がサポートしないもの（下位属性として定義されていれば
+					# 数えない。全部読んでから見分ける）。属性としても読む（前と同じ出力にする）
+					push(@unsupportedRangeNames, [$1, $prop->{'@id'}, $lc]);
+					$prop = $res = parseProperty($id, $label, $cls, $prop);
+					$pcls = "";
 				}
 				else {
 					# 属性の次の列に名前だけを書き、その右に何も無い：下位属性か、知らないデータ型の名前
