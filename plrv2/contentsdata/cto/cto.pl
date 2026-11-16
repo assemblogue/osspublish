@@ -121,8 +121,6 @@ sub isSystemProperty {
 	return exists($systemProps{$id});
 }
 
-# 予約クラスのチェック
-# 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 # 属性の次の列（値域の列）に名前だけを書き、その右に何も無いものが、データ型の予約語でも、シートか
 # 系のオントロジーで定義された属性（下位属性の書き方）でもなければ、知らないデータ型の名前かもしれない
 # ので知らせる。黙って属性と読むと、値域の無い属性と、どこにも定義の無い下位属性ができる（plrDart の
@@ -143,6 +141,8 @@ sub checkUnknownDatatypes {
 	print STDERR join('', @errors);
 }
 
+# 予約クラスのチェック
+# 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedClass {
     # 予約クラス
     my @rsvcls = ("Channel", "DataSetting", "PlrId");
