@@ -45,7 +45,6 @@ my %unsupportedXsdDatatypes = (
 	"Name" => "string", "NCName" => "string", "NMTOKEN" => "string", "NMTOKENS" => "string",
 	"ID" => "string", "IDREF" => "string", "IDREFS" => "string",
 	"ENTITY" => "string", "ENTITIES" => "string", "QName" => "string", "NOTATION" => "string",
-	"gYearMonth" => "", "gMonthDay" => "", "gDay" => "", "gMonth" => "",
 	"hexBinary" => "", "base64Binary" => "",
 	"yearMonthDuration" => "duration", "dayTimeDuration" => "duration",
 	"dateTimeStamp" => "dateTime", "anySimpleType" => "", "anyAtomicType" => "",
@@ -91,7 +90,7 @@ sub parseInput {
 # 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedWord {
     # 予約語配列
-    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "anyURI", "nonPositiveInteger", "negativeInteger");
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "gYearMonth", "gMonth", "gDay", "gMonthDay", "anyURI", "nonPositiveInteger", "negativeInteger");
 
     return checkWord(\@rsvky, $_);
 }
