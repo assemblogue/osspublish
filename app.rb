@@ -26,28 +26,53 @@ def spreadsheet_to_csv(path, tmpdir)
   path
 end
 
-def run_command_async(command, logger)
+# Runs the command in a thread whose value is nil on success, or the error entry
+# { command:, exit_status:, message: } (exit_status is nil if it could not run).
+def run_command_async(command, logger, stdin_data: nil)
+  cmd = command.join(' ')
+
   Thread.new do
-    logger.info { "Start of command: #{command}" }
-    stdout, stderr, status = Open3.capture3(command)
+    logger.info { "Command: #{cmd}" }
+    stdout, stderr, status = Open3.capture3(*command, stdin_data:)
     logger.debug { "Stdout: #{stdout}" }
-    logger.info { "Stderr: #{stderr}" }
-    logger.info { "End of command: #{command}" }
-    yield if block_given?
+    logger.info { "Stderr: #{stderr}" } unless stderr.empty?
+
+    { command: cmd, exit_status: status.exitstatus, message: stderr.strip } unless status.success?
+  rescue StandardError => e
+    logger.error { "Command failed: #{cmd}: #{e.full_message}" }
+
+    { command: cmd, exit_status: nil, message: "#{e.class}: #{e.message}" }
   end
 end
 
-def JSONize(files, tmpdir, logger)
-  threads = files.map do |f|
-    logger.info("#{f.path}: #{f.size} bytes, #{Digest::MD5.hexdigest(f.read)}")
-    base = File.join(tmpdir, File.basename(f, '.csv'))
-    [run_command_async("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cto.pl #{base} ''", logger),
-     run_command_async("cat #{spreadsheet_to_csv(f.path, tmpdir)} | perl plrv2/contentsdata/cto/cts.pl #{base} ''", logger)]
-  end.flatten
-  ThreadsWait.all_waits(*threads)
+# Converts one uploaded file.
+# Returns { file:, error: [...], outputs: [path, ...] }.
+def convert_file(file, tmpdir, logger)
+  tempfile = file[:tempfile]
+  filename = File.basename(file[:filename].to_s.empty? ? tempfile.path : file[:filename])
 
-  Dir.glob("#{tmpdir}/*.jsonld")
-     .reject { |f| f =~ /(Context|_stylesheet)\.jsonld$/ }
+  logger.info("#{filename}: #{tempfile.path}: #{tempfile.size} bytes")
+
+  csv_contents = File.binread(spreadsheet_to_csv(tempfile.path, tmpdir))
+  base = File.join(tmpdir, File.basename(tempfile.path, '.csv'))
+
+  errors = [
+    run_command_async(['perl', 'plrv2/contentsdata/cto/cto.pl', base, ''], logger, stdin_data: csv_contents),
+    run_command_async(['perl', 'plrv2/contentsdata/cto/cts.pl', base, ''], logger, stdin_data: csv_contents)
+  ].filter_map(&:value)
+
+  outputs = if errors.empty?
+              Dir.glob("#{base}*.jsonld")
+                 .reject { |path| path =~ /(Context|_stylesheet)\.jsonld$/ }
+            else
+              []
+            end
+
+  { file: filename, error: errors, outputs: }
+rescue StandardError => e
+  logger.error { "Conversion failed: #{e.full_message}" }
+
+  { file: filename || 'unknown', error: [{ message: "#{e.class}: #{e.message}" }], outputs: [] }
 end
 
 # proxy IO for multiple IOs
@@ -88,8 +113,13 @@ class App < Sinatra::Base
   end
 
   post '/convert' do
+    # Uploaded files are hashes, sent as `file[]` (an array) or as a single `file`.
+    files = [params['file']].flatten.grep(Hash)
+    halt 400, { 'Content-Type' => 'application/json' }, { error: 'No files uploaded' }.to_json if files.empty?
+
     logfile = Tempfile.create(['log', '.txt']).path
     puts "Running #{settings.environment}, logging in #{logfile}"
+
     logfile_io = if settings.environment == :test
                    MultiIO.new(STDERR, File.open(logfile, 'a'))
                  else
@@ -103,38 +133,48 @@ class App < Sinatra::Base
                 end
     end
 
-    files = request.env['rack.tempfiles']
     logger.debug { request.env.inspect }
+
     zip = Tempfile.create(['converted', '.zip']).path
     logger.info("Reading #{files.inspect}")
+
     Dir.mktmpdir do |tmpdir|
       Zip::File.open(zip, create: true) do |zipfile|
         index = {}
-        JSONize(files, tmpdir, logger).each do |path|
-          logger.info("Adding #{path}")
-          zipfile.add(File.basename(path), path)
-          zipfile.commit
-          get_link_and_label(path) do |link, label, base|
-            if base == ''
-              logger.warn("Not linking #{path}")
-            else
-              index[link] ||= []
-              index[link] << {
-                'file' => File.basename(path),
-                'label' => label,
-                'id' => base,
-                'format' => 'application/ld+json'
-              }
+        results = files.map { |file| convert_file(file, tmpdir, logger) }
+
+        results.each do |result|
+          result[:outputs].each do |path|
+            zfilename = File.basename(path)
+            logger.info("Adding #{path} (from #{result[:file]})")
+            zipfile.add(zfilename, path)
+            zipfile.commit
+
+            get_link_and_label(path) do |link, label, base|
+              if base.empty?
+                logger.warn("Not linking #{path}")
+              else
+                index[link] ||= []
+                index[link] << { file: zfilename, label: label, id: base, format: 'application/ld+json' }
+              end
             end
+          rescue StandardError => e
+            logger.error { "Cannot add #{path} (from #{result[:file]}): #{e.message}" }
+            result[:error] << { message: "#{e.class}: #{e.message}" }
           end
         end
-        Tempfile.create('tmp') do |f|
-          f.puts index.to_json
-          f.flush
+
+        index[:response] = results.map { |result| result.slice(:file, :error) }
+
+        Tempfile.create('tmp') do |file|
+          file.puts(index.to_json)
+          file.flush
           logfile_io.flush
-          zipfile.add('index.json', f)
+
+          zipfile.add('index.json', file)
           zipfile.add('log.txt', logfile)
           zipfile.commit
+
           send_file(zip, filename: File.basename(zip))
         end
       end

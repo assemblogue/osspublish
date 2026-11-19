@@ -1,6 +1,7 @@
 // -*- coding: utf-8 -*-
 
 import Client.Companion.authenticateAndGetStorage
+import Client.Companion.conversionFailures
 import Client.Companion.convertUsingOnlineService
 import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
@@ -8,6 +9,7 @@ import Client.Companion.generateOssId
 import Client.Companion.normalizeOssId
 import Client.Companion.parseFileToUpload
 import Client.Companion.hasEmptyContent
+import Client.Companion.requireSuccessfulConversion
 import Client.Companion.unzipInputStream
 import com.assemblogue.plr.io.Storage
 import com.assemblogue.plr.io.StorageInfo
@@ -20,6 +22,7 @@ import okio.source
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.*
 
@@ -251,5 +254,69 @@ class ClientTest {
 		verify(plr).newStorage(any())
 		verify(plr, never()).connectStorage(any())
 		assert(result == storage)
+	}
+
+	@Test
+	fun `conversionFailures lists failures of every file`() {
+		val node = ObjectMapper().readTree("""
+		{
+		  "response": [
+		    {"file": "bad1.csv", "error": [{"command": "perl cto.pl", "message": "syntax error"}]},
+		    {"file": "good.csv", "error": []},
+		    {"file": "bad2.xlsx", "error": [{"message": "Zip::Error: broken"}]}
+		  ]
+		}
+		""".trimIndent())
+
+		assertEquals(
+			listOf("bad1.csv: syntax error (perl cto.pl)", "bad2.xlsx: Zip::Error: broken"),
+			conversionFailures(node))
+	}
+
+	@Test
+	fun `conversionFailures is empty when nothing failed`() {
+		assertEquals(listOf<String>(), conversionFailures(ObjectMapper().readTree("{}")))
+		assertEquals(
+			listOf<String>(),
+			conversionFailures(ObjectMapper().readTree("""{"response": [{"file": "a.csv", "error": []}]}""")))
+	}
+
+	@Test
+	fun `conversionFailures tolerates a missing or null error field`() {
+		val node = ObjectMapper().readTree("""
+		{"response": [
+		  {"file": "no_error_field.csv"},
+		  {"file": "null_error.csv", "error": null},
+		  {"file": "bad.csv", "error": [{"message": "boom"}]}
+		]}
+		""".trimIndent())
+
+		assertEquals(listOf("bad.csv: boom"), conversionFailures(node))
+	}
+
+	@Test
+	fun `requireSuccessfulConversion reports conversion error`() {
+		val node = ObjectMapper().readTree("""
+		{
+		  "response": [
+		    {
+		      "file": "input_with_error.csv",
+		      "error": [
+		        {
+		          "command": "perl plrv2/contentsdata/cto/cto.pl /tmp/x",
+							"exit_status": 255,
+		          "message": "Error: undefined property `missingProperty' in `| missingProperty' at line 3"
+		        }
+		      ]
+		    }
+		  ]
+		}
+	""".trimIndent())
+
+		val ex = assertThrows(ClientException::class.java) {
+			requireSuccessfulConversion(node)
+		}
+
+		assertTrue(ex.message!!.contains("input_with_error.csv: Error: undefined property"))
 	}
 }
