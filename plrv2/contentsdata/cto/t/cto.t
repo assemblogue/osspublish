@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 36;
+use Test::More tests => 40;
 
 sub run_command {
 	my $command = shift;
@@ -277,6 +277,32 @@ foreach my $case (
 						'aiPrompt: one language per row');
 	is_deeply($d{'#Plain'}->{'#aiPrompt'}, {'' => 'no language'}, 'aiPrompt without language');
 	ok(!exists($d{'#ShelterSupport'}->{'aiPrompt'}), 'aiPrompt has no bare key');
+}
+
+{
+	# token（言語を持たない文字列：plrDart の追記d61）は予約語で、値域にそのまま書ける。ほかの XML Schema の
+	# 文字列の型（normalizedString など）は、これまでどおり string で代えるよう知らせる
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_token');
+	"]O Codes ja:コード;Codes",\オントロジー,,,
+	"Item ja:品目;Item","code ja:コード;code",token,,
+	,"note ja:注;note",normalizedString,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_token.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is($d{'#code'}->{'range'}, 'token', 'token: a reserved datatype');
+	unlike(errorText('plrTest_token'), qr/`token'/, 'token: no warning');
+	like(errorText('plrTest_token'), qr/`normalizedString' .*\(use string\)/, 'normalizedString: still told to use string');
+}
+
+{
+	# データ型の値域を持つ属性に、続くクラスを値域として重ねようとしたら、その旨を知らせる
+	# （checkReservedWord が引数を照らす。前は呼んだ所の $_ を照らし、この判定がいつも偽だった）
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_range_twice');
+	"]O Shop ja:店;Shop",\オントロジー,,,
+	"Item ja:品目;Item","weight ja:重さ;weight",decimal,"Unit ja:単位;Unit",
+	EOD
+	like(errorText('plrTest_range_twice'), qr/Property #weight is DatatypeProperty that already have a range\.$/m,
+		'a class after a datatype range: told that the property already has a datatype range');
 }
 
 done_testing();

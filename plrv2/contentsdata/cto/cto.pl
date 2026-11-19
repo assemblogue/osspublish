@@ -41,7 +41,7 @@ my %unsupportedXsdDatatypes = (
 	"long" => "integer", "int" => "integer", "short" => "integer", "byte" => "integer",
 	"unsignedLong" => "nonNegativeInteger", "unsignedInt" => "nonNegativeInteger",
 	"unsignedShort" => "nonNegativeInteger", "unsignedByte" => "nonNegativeInteger",
-	"normalizedString" => "string", "token" => "string", "language" => "string",
+	"normalizedString" => "string", "language" => "string",
 	"Name" => "string", "NCName" => "string", "NMTOKEN" => "string", "NMTOKENS" => "string",
 	"ID" => "string", "IDREF" => "string", "IDREFS" => "string",
 	"ENTITY" => "string", "ENTITIES" => "string", "QName" => "string", "NOTATION" => "string",
@@ -90,9 +90,11 @@ sub parseInput {
 # 予約後とマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedWord {
     # 予約語配列
-    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "gYearMonth", "gMonth", "gDay", "gMonthDay", "anyURI", "nonPositiveInteger", "negativeInteger");
+    my @rsvky = ("string", "integer", "positiveInteger", "nonNegativeInteger", "decimal", "boolean", "dateTime", "mmdata", "date", "plrChannel", "plrSchema", "duration", "time", "gYear", "gYearMonth", "gMonth", "gDay", "gMonthDay", "anyURI", "nonPositiveInteger", "negativeInteger", "token");
+    # token は言語を持たない文字列（ID・コード・実装の名前など）。string の下位ではない（plrDart の追記d61）
 
-    return checkWord(\@rsvky, $_);
+    my ($word) = @_;
+    return checkWord(\@rsvky, $word);
 }
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
