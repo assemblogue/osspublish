@@ -97,11 +97,12 @@ sub checkReservedWord {
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
 # 無くても書く（予約クラスと同じく、宣言は系の側にある）。builtInFunction は文字列、
-# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）
+# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）、aiPrompt は言語ごとの文字列
+# （langValueOf。plrDart の追記d60）
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction", "linkPath");
+    my @rsvprop = ("builtInFunction", "linkPath", "aiPrompt");
 
     return scalar(grep { $_ eq $id } @rsvprop);
 }
@@ -242,13 +243,13 @@ sub extract {
 				my ($id) = split(/[ \n]+/, $_, 2);
 				# range 一個前のプロパティに設定する
 				parsePropertyParams($id, $prop, "ObjectProperty");
-			} elsif (/^([a-zA-Z]{2}(_[a-zA-Z]{2})*)?:\n(.*)$/s) {
+			} elsif (my ($lang, $text) = langValueOf($_)) {
 				# Tooltip
 				if ($res->{'@id'} =~ /arg[0-9]+/) {
 					$res = $cls;
 				}
 				$res->{'tooltip'} = {} unless ($res->{'tooltip'});
-				$res->{'tooltip'}->{$1} = $3;
+				$res->{'tooltip'}->{$lang} = $text;
 			}
 			#if (/^_?[A-Z]/) {
 			elsif (/^_?[A-Z]/ || /^_[a-z]/) {
@@ -402,6 +403,15 @@ sub parseClass {
     return $cls;
 }
 
+# 言語ごとの文字列の1つの値（「ja:」と改行の後が本文。言語の無い値は「:」と改行で始まり、
+# 鍵は ''）を (言語, 本文) に分ける。この形でなければ空の並び。tooltip と aiPrompt が通る
+# （plrDart の追記d60）
+sub langValueOf {
+	my ($s) = @_;
+	return () unless ($s =~ /^([a-zA-Z]{2}(?:_[a-zA-Z]{2})*)?:\n(.*)$/s);
+	return (defined($1) ? $1 : '', $2);
+}
+
 # クラスの属性に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
 # （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。ただし
 # 系の予約属性（isReservedProperty）は、宣言が無ければ文字列として書く。
@@ -411,6 +421,17 @@ sub parseClass {
 sub resolveClassPropertyValues {
 	foreach my $cv (@classValues) {
 		my ($cls, $propId, $val, $line) = @$cv;
+
+		# aiPrompt は言語ごとの文字列（tooltip と同じ形。langValueOf）。"| aiPrompt" の行ごとに1つの
+		# 言語の値を足す。宣言の有無によらず、いつもこの形で書く（plrDart の追記d60）
+		if ($propId eq "aiPrompt") {
+			my ($lang, $text) = langValueOf($val);
+			die("Error: `| aiPrompt' at line $line must be `lang:' and a newline before the text\n")
+				unless (defined($lang));
+			$cls->{"#aiPrompt"} = {} unless ($cls->{"#aiPrompt"});
+			$cls->{"#aiPrompt"}->{$lang} = $text;
+			next;
+		}
 
 		my $p = $typeMap{"#$propId"};
 		unless ($p) {

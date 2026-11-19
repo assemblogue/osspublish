@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 33;
+use Test::More tests => 36;
 
 sub run_command {
 	my $command = shift;
@@ -256,6 +256,27 @@ foreach my $case (
 	is($byId{'#dataSettingNote'}->{'domain'}, 'DataSetting', 'property after DataSetting belongs to the built-in DataSetting');
 	my $c = json_file_to_perl("$dir/plrTest_reserved_declContext.jsonld");
 	ok(!exists($c->{'@context'}->[1]->{'Channel'}), 'Channel is not in the context');
+}
+
+{
+	# aiPrompt（系の予約属性。言語ごとの文字列：plrDart の追記d60）——"| aiPrompt" の行ごとに1つの言語。
+	# tooltip と同じ形で、「ja:」と改行の後が本文、言語の無い値は「:」と改行で始まり鍵は ''。鍵は # 付き
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_aiprompt');
+	"]O Shelter ja:避難所;Shelter",\オントロジー,,,
+	"ShelterSupport ja:避難者支援;Shelter support",| aiPrompt,"ja:
+	Ask gently, one field at a time",
+	,| aiPrompt,"en:
+	Ask one field at a time",
+	"Plain ja:素;Plain",| aiPrompt,":
+	no language",
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_aiprompt.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#ShelterSupport'}->{'#aiPrompt'},
+						{'ja' => 'Ask gently, one field at a time', 'en' => 'Ask one field at a time'},
+						'aiPrompt: one language per row');
+	is_deeply($d{'#Plain'}->{'#aiPrompt'}, {'' => 'no language'}, 'aiPrompt without language');
+	ok(!exists($d{'#ShelterSupport'}->{'aiPrompt'}), 'aiPrompt has no bare key');
 }
 
 done_testing();
