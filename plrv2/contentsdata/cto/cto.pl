@@ -97,11 +97,12 @@ sub checkReservedWord {
 
 # 系の予約属性のチェック（クラスの "| 属性" で値を書けるメタ属性）。シートに宣言が
 # 無くても書く（予約クラスと同じく、宣言は系の側にある）。builtInFunction は文字列、
-# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）
+# linkPath は属性の道（resolveLinkPath。plrDart の追記R971）、aiPrompt は言語ごとの文字列
+# （tooltip と同じ形。plrDart の追記d60）
 sub isReservedProperty {
     my ($id) = @_;
     # 予約属性
-    my @rsvprop = ("builtInFunction", "linkPath");
+    my @rsvprop = ("builtInFunction", "linkPath", "aiPrompt");
 
     return scalar(grep { $_ eq $id } @rsvprop);
 }
@@ -411,6 +412,16 @@ sub parseClass {
 sub resolveClassPropertyValues {
 	foreach my $cv (@classValues) {
 		my ($cls, $propId, $val, $line) = @$cv;
+
+		# aiPrompt は言語ごとの文字列（tooltip と同じ形：「ja:」と改行の後が本文。言語の無い値は
+		# 鍵 ''）。宣言の有無によらず、"| aiPrompt" の行ごとに1つの言語の値を足す（plrDart の追記d60）
+		if ($propId eq "aiPrompt") {
+			my ($lang, $text) = ($val =~ /^([a-zA-Z]{2}(?:_[a-zA-Z]{2})*)?:\n(.*)$/s)
+				? (defined($1) ? $1 : '', $2) : ('', $val);
+			$cls->{"#aiPrompt"} = {} unless ($cls->{"#aiPrompt"});
+			$cls->{"#aiPrompt"}->{$lang} = $text;
+			next;
+		}
 
 		my $p = $typeMap{"#$propId"};
 		unless ($p) {
