@@ -51,6 +51,11 @@ my %unsupportedXsdDatatypes = (
 );
 my $mode;
 
+# いまの属性の行が、既に登録済の属性の、クラスの下での2回目以降の出現（受け継いだ属性。表では赤）なら、
+# そのクラス。値域の後の `!既定値` は、属性の既定値ではなく、このクラスの限定の defaultValue にする
+# （plrDart の追記d102：クラスごとの既定値）。新しい属性の行・クラスの無い行では undef
+my $inheritedOn;
+
 
 # 自動生成クラスのナンバー
 # もともとが１行単位の処理なので、他行との関連をたどるのが甚だ困難
@@ -268,6 +273,7 @@ sub extract {
 
 				$cls = $res = parseClass($id, $label, $pcls);
 				$pcls = $cls;
+				$inheritedOn = undef;
 
 				if ($prop) {
 					# 域値クラス指定
@@ -542,8 +548,10 @@ sub parseProperty {
     $labelledProps{$id} = 1 if (defined($label) && $label ne '');
 
     my $prop = $typeMap{$id};
+    $inheritedOn = undef;
     if ($prop) {
 		#　既に登録済のプロパティ名
+		$inheritedOn = $cls if ($cls);
 		#if ($params) {
 		#	print STDERR "Warning: Property `$id' was already defined " .
 		#		"at line $lc\n";
@@ -1017,6 +1025,10 @@ sub parsePropertyParams {
 			if( $#la > 0 ){
 				parseLabelLang($prop, $la[1], 'falseAbbrev');
 			}
+		} elsif ($sym eq "!" && $inheritedOn) {
+			# 受け継いだ属性の、クラスごとの既定値：そのクラスの限定の defaultValue（plrDart の追記d102）
+			setRestrictionDefault($inheritedOn, $prop->{'@id'},
+				valueOfRange($range || $prop->{'range'}, $val));
 		} elsif ($sym eq "!") {
 			# defaultValue.
 			$prop->{'defaultValue'} = valueOfRange($range, $val);
@@ -1041,6 +1053,30 @@ sub parsePropertyParams {
     ## $typeMap{$prop_id} = $prop;
 
 	return $prop;
+}
+
+# クラス $cls の、属性 $id の限定に既定値 $val を書く（無ければ限定を足す）。組込みのクラスには書き足せない
+sub setRestrictionDefault {
+	my ($cls, $id, $val) = @_;
+
+	if ($cls->{'builtin'}) {
+		print STDERR "Warning: Default value on property `$id' of built-in class " .
+			"`$cls->{'@id'}' is ignored at line $lc\n";
+		return;
+	}
+	my $scof = $cls->{'subClassOf'};
+	$cls->{'subClassOf'} = $scof = [] unless ($scof);
+	foreach my $r (@$scof) {
+		if (ref($r) eq 'HASH' && $r->{'onProperty'} eq $id) {
+			$r->{'defaultValue'} = $val;
+			return;
+		}
+	}
+	push(@$scof, {
+		'@type' => "Restriction",
+		'onProperty' => "$id",
+		'defaultValue' => $val,
+	});
 }
 
 # 値域に合わせた値（真偽値・数はその型、それ以外は文字列）

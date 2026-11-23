@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 40;
+use Test::More tests => 43;
 
 sub run_command {
 	my $command = shift;
@@ -21,6 +21,29 @@ sub run_command {
 }
 
 my $dir = tempdir('/tmp/plrtest_XXXX');
+
+# 受け継いだ属性の2回目の出現（下位クラスの行。表では赤）の値域の後の `!既定値` は、属性の既定値ではなく、
+# そのクラスの限定の defaultValue になる（plrDart の追記d102：クラスごとの既定値）。属性の既定値は変えない
+{
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_restriction_default');
+	"]O Remind ja:督促;Remind",\オントロジー,,,
+	"Task ja:タスク;Task","remindAfter(1 ja:督促までの期間;remind after","duration!P1D",,
+	,"Approval ja:承認;Approval","remindAfter","duration!P3D",
+	,"Other ja:その他;Other","remindAfter",,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_restriction_default.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is($d{'#remindAfter'}->{'defaultValue'}, 'P1D',
+		'restriction default: the property keeps its own default');
+	my ($r) = grep { ref($_) eq 'HASH' && ($_->{'onProperty'} // '') eq '#remindAfter' }
+		@{$d{'#Approval'}->{'subClassOf'}};
+	is($r->{'defaultValue'}, 'P3D',
+		'restriction default: `!` on an inherited property goes to the restriction of the subclass');
+	my ($o) = grep { ref($_) eq 'HASH' && ($_->{'onProperty'} // '') eq '#remindAfter' }
+		@{$d{'#Other'}->{'subClassOf'}};
+	ok(!exists($o->{'defaultValue'}),
+		'restriction default: none without `!`');
+}
 
 {
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_hyphen');
