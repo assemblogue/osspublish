@@ -4,14 +4,14 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 39;
+use Test::More tests => 58;
 
 sub run_command {
 	my $command = shift;
 	my $content = shift;
 	my $dir = shift;
 	my $prefix = shift;
-	# 残りの引数は系のオントロジーのファイル。エラーの文は $dir/$prefix.err に残す
+	# 残りの引数はそのまま渡す（使い方の誤りの試験）。エラーの文は $dir/$prefix.err に残す
 	my $pid = open2(my $child_in, my $child_out, join(' ', "$^X ./$command $dir/$prefix $prefix", @_, "2>$dir/$prefix.err")) or die "$!";
 	print $child_out $content;
 	close $child_in;
@@ -21,18 +21,6 @@ sub run_command {
 }
 
 my $dir = tempdir('/tmp/plrtest_XXXX');
-
-# 系のオントロジー（linkPath の道の属性を確かめるのに渡す。plrDart の
-# sample/system/Ontology.jsonld の形を小さくしたもの）
-my $systemOntology = "$dir/plrTest_system.jsonld";
-{
-	open(my $f, '>', $systemOntology) or die "$!";
-	print $f '{"@id": "ONTO", "defines": [{"@id": "#truthValue", "@type": "ObjectProperty"},'
-		. ' {"@id": "#onto34", "@type": "ObjectProperty"},'
-		. ' {"@id": "#_onto340", "@type": "Class"}, {"@id": "#_onto342", "@type": "Class"},'
-		. ' {"@id": "#Constraint", "@type": "Class"}]}';
-	close($f);
-}
 
 {
 	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_hyphen');
@@ -169,12 +157,12 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 	# 系の予約属性 linkPath（plrDart の追記R971・R972）：arg1 から arg2 へたどる属性の
 	# ID を空白で区切って並べ、逆向きの属性には - を付ける。JSON-LD では歩みの @list に
 	# し、歩みは SHACL の属性の道の形（順向きは # 付きの ID、逆向きは inversePath で
-	# 包む）にする。道の属性は、シートか、引数で渡した系のオントロジーで
-	# 定義されているもの
-	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path', $systemOntology);
+	# 包む）にする。道の属性に表の中のラベルの定義が無ければ（系の属性 truthValue など）、
+	# ラベルの無い属性として知らせ、変換は続ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_link_path');
 	"]O DG ja:議論;DG",\オントロジー,,,
-	Issue,conjSubIssue,Issue,,
-	Answer,isTrue,boolean,,
+	Issue,conjSubIssue ja:連言の下位;conj sub,Issue,,
+	Answer,isTrue ja:真か;is true,boolean,,
 	GraphRelation,,,,
 	,ConjSubIssue,| linkPath,conjSubIssue,
 	,Then,| linkPath,truthValue -isTrue,
@@ -190,93 +178,34 @@ my $systemOntology = "$dir/plrTest_system.jsonld";
 												 {'inversePath' => {'@id' => '#isTrue'}}]},
 						'linkPath of two steps with an inverse one');
 	ok(!exists($d{'#linkPath'}), 'linkPath is not declared');
+	my $err = errorText('plrTest_link_path');
+	like($err, qr/Warning: property `truthValue' .*has no label/, 'linkPath: a property without a label is warned');
+	unlike($err, qr/`(conjSubIssue|isTrue)' .*has no label/, 'linkPath: properties labelled in the sheet are not warned');
 }
 
-# linkPath の道に、定義の無い属性やクラスを書くとエラー（出力を作らない）。系の
-# オントロジーを渡さなければ、系の属性も定義の無い属性になる
+# linkPath の道の属性の所に、表でクラスとして定義した名前を書くとエラー（出力を作らない）
 foreach my $case (
-	['plrTest_link_path_undef', ",Typo,| linkPath,truthValue -conjSubIsue,\n", 'undefined property in linkPath', $systemOntology],
-	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath', $systemOntology],
-	['plrTest_link_path_sysclass', ",SysCls,| linkPath,Constraint,\n", 'system class in linkPath', $systemOntology],
-	['plrTest_link_path_nosys', ",Sys,| linkPath,truthValue,\n", 'system property without the system ontology'],
+	['plrTest_link_path_class', ",Cls,| linkPath,Issue,\n", 'class in linkPath'],
 ) {
-	my ($prefix, $row, $name, @system) = @$case;
+	my ($prefix, $row, $name) = @$case;
 	run_command('cto.pl',
 		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n$row",
-		$dir, $prefix, @system);
+		$dir, $prefix);
 	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
 }
 
-# elementProperty・elementTransitive は予約属性でない（plrDart の追記R983 でやめた）。
-# シートに宣言が無ければ、ほかの属性と同じく定義の無い属性で止まる（出力を作らない）
-{
-	my $prefix = 'plrTest_element_removed';
-	run_command('cto.pl',
-		"\"]O Org ja:組織;Org\",\\オントロジー,,,\nGroup,groupMember,Person,,\n,,| elementTransitive,true,\n",
-		$dir, $prefix, $systemOntology);
-	ok($? != 0 && !-e "$dir/$prefix.jsonld", 'error: elementTransitive is no longer reserved');
-}
-
-{
-	# "| 属性" は、この行で直近のクラスか属性の宣言に書く（plrDart の追記R979——
-	# 属性の集まりの種類 onto34 を属性に書く）。前の行から引き継いだ属性のカラムの
-	# 後にも書ける。系のオントロジーで定義されたメタ属性（onto34）も書ける
-	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_property_value', $systemOntology);
-	"]O W ja:作業場;W",\オントロジー,,,
-	Workplace,rule,Rule,,
-	,,| onto34,_onto340,
-	,count(1,integer,| onto34,_onto342,
-	Rule,,,,
-	EOD
-	my $p = json_file_to_perl("$dir/plrTest_property_value.jsonld");
-	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
-	is_deeply([$d{'#rule'}->{'#onto34'}, $d{'#count'}->{'#onto34'}],
-						[{'@id' => '#_onto340'}, {'@id' => '#_onto342'}],
-						'property value on a property (carried and same row)');
-	ok(!exists($d{'#Workplace'}->{'#onto34'}) && !exists($d{'#Rule'}->{'#onto34'}),
-		 'property value is not written to the class');
-}
-
-# 属性の宣言に書く値：系を渡さなければ onto34 は定義の無い属性、クラスレベルの
-# 予約属性は属性の宣言に書けない（出力を作らない）
-foreach my $case (
-	['plrTest_property_value_nosys', ",count(1,integer,| onto34,_onto340,\n", 'meta property on a property without the system ontology'],
-	['plrTest_property_value_reserved', ",count(1,integer,| builtInFunction,equal,\n", 'class-level property on a property', $systemOntology],
-) {
-	my ($prefix, $row, $name, @system) = @$case;
-	run_command('cto.pl',
-		"\"]O W ja:作業場;W\",\\オントロジー,,,\nWorkplace,rule,Rule,,\n$row",
-		$dir, $prefix, @system);
-	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
-}
-
-{
-	# ObjectProperty の値が選択肢なら、選択肢の1つ（選択肢のクラスの下位）を書ける
-	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_selector_value');
-	"]O W ja:作業場;W",\オントロジー,,,
-	Prop,kind(1,_ordered ja:列;ordered,,
-	,,_set ja:集合;set,,
-	Workplace,rule,Rule,,
-	,,| kind,_set,
-	Rule,,,,
-	EOD
-	my $p = json_file_to_perl("$dir/plrTest_selector_value.jsonld");
-	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
-	is_deeply($d{'#rule'}->{'#kind'}, {'@id' => '#_set'}, 'selector value');
-}
-
-# ObjectProperty の値の書き違い（定義の無い値・選択肢でない値）はエラー（出力を作らない）
-foreach my $case (
-	['plrTest_value_undef', ",,| kind,_sett,\n", 'undefined value'],
-	['plrTest_value_not_option', ",,| kind,Rule,\n", 'value outside the selector'],
-	['plrTest_value_system_undef', ",,| onto34,_onto34,\n", 'undefined system value', $systemOntology],
-) {
-	my ($prefix, $row, $name, @system) = @$case;
-	run_command('cto.pl',
-		"\"]O W ja:作業場;W\",\\オントロジー,,,\nProp,kind(1,_ordered ja:列;ordered,,\n,,_set ja:集合;set,,\nWorkplace,rule,Rule,,\n$row",
-		$dir, $prefix, @system);
-	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
-}
+# linkPath の道に、表に定義の無い属性（書き誤り）を書くと、知らせて変換は続ける
+run_command('cto.pl',
+	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue ja:連言の下位;conj sub,Issue,,\nGraphRelation,,,,\n,Typo,| linkPath,conjSubIsue,\n",
+	$dir, 'plrTest_link_path_typo');
+ok($? == 0 && -e "$dir/plrTest_link_path_typo.jsonld", 'linkPath: an undefined property does not stop the conversion');
+# 表に無い名前は、大文字で始まっても（系のクラス Constraint など）、綴りでは見分けず、ラベルの無い属性として
+# 知らせて変換は続ける
+run_command('cto.pl',
+	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue ja:連言の下位;conj sub,Issue,,\nGraphRelation,,,,\n,SysCls,| linkPath,Constraint,\n",
+	$dir, 'plrTest_link_path_sysclass');
+ok($? == 0 && -e "$dir/plrTest_link_path_sysclass.jsonld", 'linkPath: a name not in the sheet does not stop the conversion even if it starts with a capital');
+like(errorText('plrTest_link_path_sysclass'), qr/Warning: property `Constraint' .*has no label/, 'warning text: a name not in the sheet in linkPath');
 
 # エラーの文が、どこを直せばよいかを言う
 sub errorText {
@@ -288,25 +217,16 @@ sub errorText {
 # - だけの歩みは「- の後に属性が無い」
 run_command('cto.pl',
 	"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\nGraphRelation,,,,\n,Dash,| linkPath,conjSubIssue -,\n",
-	$dir, 'plrTest_link_path_dash', $systemOntology);
+	$dir, 'plrTest_link_path_dash');
 like(errorText('plrTest_link_path_dash'), qr/no property after `-'/, 'error text: "-" without a property');
-# 系のオントロジーを渡さずに系の属性を書くと、渡していないことを添える
-like(errorText('plrTest_link_path_nosys'), qr/no system ontology is given/, 'error text: no system ontology');
-# defines を持たない JSON-LD（制限のファイルなど）を渡すと、そう言う
-{
-	my $restriction = "$dir/plrTest_system_restriction.jsonld";
-	open(my $f, '>', $restriction) or die "$!";
-	print $f '{"@id": "ONTO", "restrictions": []}';
-	close($f);
-	run_command('cto.pl',
-		"\"]O DG ja:議論;DG\",\\オントロジー,,,\nIssue,conjSubIssue,Issue,,\n",
-		$dir, 'plrTest_system_no_defines', $restriction);
-	like(errorText('plrTest_system_no_defines'), qr/has no `defines'/, 'error text: system ontology without defines');
-}
+like(errorText('plrTest_link_path_typo'), qr/Warning: property `conjSubIsue' .*has no label/, 'warning text: undefined property in linkPath');
+like(errorText('plrTest_link_path_class'), qr/class `Issue' in `\| linkPath'/, 'error text: class in linkPath');
+# ほかのオントロジーは読まない：3つ目からの引数は使い方の誤り
+run_command('cto.pl', "\"]O DG ja:議論;DG\",\\オントロジー,,,\n", $dir, 'plrTest_extra_args', 'Base.jsonld');
+ok($? != 0 && !-e "$dir/plrTest_extra_args.jsonld", 'error: an extra argument');
 
-# 書き違いの属性・値の無い "| 属性" はエラー（出力を作らない）
+# 値の無い "| 属性" はエラー（出力を作らない）。書き違いの属性は、ラベルの無い属性として知らせる（下の試験）
 foreach my $case (
-	['plrTest_classvalue_undef', ",Typo,| cuont,X,\n", 'undefined property'],
 	['plrTest_classvalue_empty', ",Empty,| count,,\n", 'empty value'],
 	['plrTest_classvalue_last', ",Last,| count\n", '"| property" as the last column'],
 ) {
@@ -335,6 +255,149 @@ foreach my $case (
 	is($byId{'#dataSettingNote'}->{'domain'}, 'DataSetting', 'property after DataSetting belongs to the built-in DataSetting');
 	my $c = json_file_to_perl("$dir/plrTest_reserved_declContext.jsonld");
 	ok(!exists($c->{'@context'}->[1]->{'Channel'}), 'Channel is not in the context');
+}
+
+{
+	# aiPrompt（系の予約属性。言語ごとの文字列：plrDart の追記d60）——"| aiPrompt" の行ごとに1つの言語。
+	# tooltip と同じ形で、「ja:」と改行の後が本文、言語の無い値は「:」と改行で始まり鍵は ''。鍵は # 付き
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_aiprompt');
+	"]O Shelter ja:避難所;Shelter",\オントロジー,,,
+	"ShelterSupport ja:避難者支援;Shelter support",| aiPrompt,"ja:
+	Ask gently, one field at a time",
+	,| aiPrompt,"en:
+	Ask one field at a time",
+	"Plain ja:素;Plain",| aiPrompt,":
+	no language",
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_aiprompt.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#ShelterSupport'}->{'#aiPrompt'},
+						{'ja' => 'Ask gently, one field at a time', 'en' => 'Ask one field at a time'},
+						'aiPrompt: one language per row');
+	is_deeply($d{'#Plain'}->{'#aiPrompt'}, {'' => 'no language'}, 'aiPrompt without language');
+	ok(!exists($d{'#ShelterSupport'}->{'aiPrompt'}), 'aiPrompt has no bare key');
+}
+
+{
+	# token（言語を持たない文字列：plrDart の追記d61）は予約語で、値域にそのまま書ける。ほかの XML Schema の
+	# 文字列の型（normalizedString など）は、これまでどおり string で代えるよう知らせる
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_token');
+	"]O Codes ja:コード;Codes",\オントロジー,,,
+	"Item ja:品目;Item","code ja:コード;code",token,,
+	,"note ja:注;note",normalizedString,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_token.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is($d{'#code'}->{'range'}, 'token', 'token: a reserved datatype');
+	unlike(errorText('plrTest_token'), qr/`token'/, 'token: no warning');
+	like(errorText('plrTest_token'), qr/`normalizedString' .*\(use string\)/, 'normalizedString: still told to use string');
+}
+
+{
+	# データ型の値域を持つ属性に、続くクラスを値域として重ねようとしたら、その旨を知らせる
+	# （checkReservedWord が引数を照らす。前は呼んだ所の $_ を照らし、この判定がいつも偽だった）
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_range_twice');
+	"]O Shop ja:店;Shop",\オントロジー,,,
+	"Item ja:品目;Item","weight ja:重さ;weight",decimal,"Unit ja:単位;Unit",
+	EOD
+	like(errorText('plrTest_range_twice'), qr/Property #weight is DatatypeProperty that already have a range\.$/m,
+		'a class after a datatype range: told that the property already has a datatype range');
+}
+
+# "| 属性" の属性が表に無いとき（系の onto34 など。osspublish #9 の (b)、橋田さんの決め 2026-11-24）：
+# ほかの名前と同じく、ラベルの無い属性として知らせて書く。値の綴りがクラスの名前の形なら ID、ほかは文字列
+{
+	# "| 属性" は、この行で直近のクラスか属性の宣言に書く（plrDart の追記R979——
+	# 属性の集まりの種類 onto34 を属性に書く）。前の行から引き継いだ属性のカラムの
+	# 後にも書ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_property_value');
+	"]O W ja:作業場;W",\オントロジー,,,
+	"Workplace ja:作業場;Workplace","rule ja:規則;rule","Rule ja:規則;Rule",,
+	,"order ja:順;order",| onto34,_onto340,
+	,"count(1 ja:数;count",integer,| onto34,_onto342,
+	,"note ja:注;note",string,| memo,plain text,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_property_value.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply([$d{'#order'}->{'#onto34'}, $d{'#count'}->{'#onto34'}],
+						[{'@id' => '#_onto340'}, {'@id' => '#_onto342'}],
+						'property value on a property (same row, after the range)');
+	ok(!exists($d{'#Workplace'}->{'#onto34'}) && !exists($d{'#Rule'}->{'#onto34'}),
+		 'property value is not written to the class');
+	is($d{'#note'}->{'#memo'}, 'plain text', 'a value not in the form of a class name is a string');
+	my $err = errorText('plrTest_property_value');
+	like($err, qr/Warning: property `onto34' .*has no label/, 'a property not in the sheet is warned');
+	like($err, qr/Warning: class `_onto340' .*has no label/, 'a value not in the sheet is warned');
+}
+
+{
+	# 前の行から引き継いだ属性のカラムの後の "| 属性" も、その属性に書く
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_property_value_carried');
+	"]O W ja:作業場;W",\オントロジー,,,
+	"Workplace ja:作業場;Workplace","rule ja:規則;rule","Rule ja:規則;Rule",,
+	,,| onto34,_onto340,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_property_value_carried.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#rule'}->{'#onto34'}, {'@id' => '#_onto340'}, 'property value after a carried property column');
+	ok(!exists($d{'#Rule'}->{'#onto34'}), 'carried: not written to the range class');
+}
+
+# elementProperty・elementTransitive は予約属性でない（plrDart の追記R983 でやめた）。
+# 表に宣言が無ければ、ほかの属性と同じく、ラベルの無い属性として知らせる
+run_command('cto.pl',
+	"\"]O Org ja:組織;Org\",\\オントロジー,,,\n\"Group ja:群;Group\",\"groupMember ja:構成員;member\",\"Person ja:人;Person\",,\n,,| elementTransitive,true,\n",
+	$dir, 'plrTest_element_removed');
+like(errorText('plrTest_element_removed'), qr/Warning: property `elementTransitive' .*has no label/,
+	'elementTransitive is no longer reserved');
+
+{
+	# ObjectProperty の値が選択肢なら、選択肢の1つ（選択肢のクラスの下位）を書ける
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_selector_value');
+	"]O W ja:作業場;W",\オントロジー,,,
+	Prop,kind(1,_ordered ja:列;ordered,,
+	,,_set ja:集合;set,,
+	Workplace,rule,Rule,,
+	,,| kind,_set,
+	Rule,,,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_selector_value.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#rule'}->{'#kind'}, {'@id' => '#_set'}, 'selector value');
+}
+
+# エラー（出力を作らない）：
+# * 選択肢を値域に持つ属性に、選択肢でない値を書く
+# * クラスレベルの予約属性を、属性の宣言に書く
+# * "| 属性" の属性の所に、表でクラスとして定義した名前を書く
+# * 定義域が属性の集まり（ONTO3）の属性を、クラスに書く／定義域がクラスの集まり（ONTO1）の属性を、属性に書く
+foreach my $case (
+	['plrTest_value_undef', ",,| kind,_sett,\n", 'value not defined in the selector'],
+	['plrTest_value_not_option', ",,| kind,Rule,\n", 'value outside the selector'],
+	['plrTest_property_value_reserved', ",count(1,integer,| builtInFunction,equal,\n", 'class-level property on a property'],
+	['plrTest_property_value_class', ",,| Rule,abc,\n", 'class in "| property"'],
+	['plrTest_meta_on_class', "Other,| onto34,_onto340,\n", 'property-level property on a class'],
+	['plrTest_meta_on_property', ",count(1,integer,| abstract,true,\n", 'class-level property on a property (by its domain)'],
+) {
+	my ($prefix, $row, $name) = @$case;
+	run_command('cto.pl',
+		"\"]O W ja:作業場;W\",\\オントロジー,,,\nProp,kind(1,_ordered ja:列;ordered,,\n,,_set ja:集合;set,,\n"
+		. "ONTO3,onto34(1,_onto340,,\n,,_onto342,,\nONTO1,abstract,boolean,,\nWorkplace,rule,Rule,,\n$row",
+		$dir, $prefix);
+	ok($? != 0 && !-e "$dir/$prefix.jsonld", "error: $name");
+}
+like(errorText('plrTest_value_not_option'), qr/`Rule' is not in the range/, 'error text: value outside the selector');
+like(errorText('plrTest_property_value_class'), qr/class `Rule' in `\| Rule'/, 'error text: class in "| property"');
+like(errorText('plrTest_meta_on_class'), qr/property-level property `\| onto34' on a class/, 'error text: property-level property on a class');
+
+{
+	# 定義域が属性の集まり（ONTO3）の属性は、属性に書ける（Ontology.xlsx の onto34 の形）
+	run_command('cto.pl',
+		"\"]O W ja:作業場;W\",\\オントロジー,,,\nONTO3,onto34(1,_onto340,,\n,,_onto342,,\nWorkplace,order,| onto34,_onto340,\n",
+		$dir, 'plrTest_meta_on_property_ok');
+	my $p = json_file_to_perl("$dir/plrTest_meta_on_property_ok.jsonld");
+	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
+	is_deeply($d{'#order'}->{'#onto34'}, {'@id' => '#_onto340'}, 'property-level property on a property');
 }
 
 done_testing();
