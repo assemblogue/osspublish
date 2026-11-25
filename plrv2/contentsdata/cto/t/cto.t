@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 58;
+use Test::More tests => 64;
 
 sub run_command {
 	my $command = shift;
@@ -398,6 +398,30 @@ like(errorText('plrTest_meta_on_class'), qr/property-level property `\| onto34' 
 	my $p = json_file_to_perl("$dir/plrTest_meta_on_property_ok.jsonld");
 	my %d = map { ($_->{'@id'} => $_) } @{$p->{'defines'}};
 	is_deeply($d{'#order'}->{'#onto34'}, {'@id' => '#_onto340'}, 'property-level property on a property');
+}
+
+{
+	# クラスの右隣（間に属性の無い所）の予約クラスは、表のクラス #Channel を宣言し、上位を左のクラスと
+	# 組込みのクラス（# を付けない Channel）にする（plrDart#511 の行12）。属性の右隣なら値域、
+	# A 列なら組込みのクラスそのもの（宣言しない）のまま
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_reserved_sub');
+	"]O Sys ja:系;Sys",\オントロジー,,,
+	"ONTOc1 ja:チャネルの種類;channel kind","Channel ja:チャネル;Channel",,,
+	"Task ja:タスク;Task","channelOf ja:チャネル;channel",Channel,,
+	"Channel ja:チャネル;Channel",channelSetting,,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_reserved_sub.jsonld");
+	my %byId = map { ($_->{'@id'} // '') => $_ } @{$p->{'defines'}};
+	is($byId{'#Channel'}->{'@type'}, 'Class', 'reserved class under a class: #Channel is declared');
+	is_deeply([sort map { $_->{'@id'} } @{$byId{'#Channel'}->{'subClassOf'} // []}], ['#ONTOc1', 'Channel'],
+		'reserved class under a class: subclass of the class on its left and of the built-in');
+	is($byId{'#Channel'}->{'label'}->{'ja'}, "\x{30C1}\x{30E3}\x{30CD}\x{30EB}", 'reserved class under a class: its label is read'); # チャネル
+	is($byId{'#channelOf'}->{'range'}, 'Channel', 'reserved class after a property: still the range');
+	ok(!exists($byId{'Channel'}) && $byId{'#channelSetting'}->{'domain'} eq 'Channel',
+		'reserved class in column A: still the built-in');
+	my $c = json_file_to_perl("$dir/plrTest_reserved_subContext.jsonld");
+	ok(!exists($c->{'@context'}->[1]->{'Channel'}) && exists($c->{'@context'}->[1]->{'ONTOc1'}),
+		'reserved class under a class: its name stays the built-in in the context');
 }
 
 done_testing();
