@@ -710,7 +710,11 @@ sub parseProperty {
 		}
 
         if ($p_prop) {
-            $prop->{'subPropertyOf'} = [$p_prop->{'@id'}];
+            # 属性の木の2か所以上に書いた属性は、上位をそれぞれ足す（後の方で上書きしない）
+            my $sp = $prop->{'subPropertyOf'} || [];
+            $sp = [$sp] unless ref($sp) eq 'ARRAY';
+            push(@$sp, $p_prop->{'@id'}) unless grep { $_ eq $p_prop->{'@id'} } @$sp;
+            $prop->{'subPropertyOf'} = $sp;
         }
 
 		## $typeMap{$id} = $prop;
