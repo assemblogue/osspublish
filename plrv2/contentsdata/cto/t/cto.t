@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 64;
+use Test::More tests => 68;
 
 sub run_command {
 	my $command = shift;
@@ -422,6 +422,25 @@ like(errorText('plrTest_meta_on_class'), qr/property-level property `\| onto34' 
 	my $c = json_file_to_perl("$dir/plrTest_reserved_subContext.jsonld");
 	ok(!exists($c->{'@context'}->[1]->{'Channel'}) && exists($c->{'@context'}->[1]->{'ONTOc1'}),
 		'reserved class under a class: its name stays the built-in in the context');
+}
+
+{
+	# 上位クラスは素の参照 {"@id": …} で書き、@type を添えない（plrDart の追記d119：参照に属性を添えない）。
+	# 同じ属性を持つ3つのクラスは、自動で作る1つの上位クラスの下に入る
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_plainSuper');
+	"]O Family ja:家族;Family",\オントロジー,,,
+	"A ja:甲;A",name ja:名前;name,string,,
+	"B ja:乙;B",name,string,,
+	"C ja:丙;C",name,string,,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_plainSuper.jsonld");
+	my %byId = map { $_->{'@id'} => $_ } @{$p->{'defines'}};
+	my $super = $byId{'#name'}->{'domain'};
+	like($super, qr/^#_AutomaticGeneration_Super_/, 'plain super: the shared property has the generated super class as its domain');
+	for my $c ('#A', '#B', '#C') {
+		my @refs = grep { !exists $_->{'@type'} } @{$byId{$c}->{'subClassOf'}};
+		is_deeply(\@refs, [{'@id' => $super}], "plain super: $c refers to the super class by a plain {\"\@id\"}");
+	}
 }
 
 done_testing();

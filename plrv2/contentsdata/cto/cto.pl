@@ -605,8 +605,9 @@ sub setSubClassOf {
 
 	# 上位クラスがある場合(上位クラス複数あり得る)
     if ($pid) {
+		# 上位クラスは素の参照 {"@id": …} で書く（参照に属性を添えない。plrDart の追記d119）。
+		# subClassOf の値で @type を持つのは限定（Restriction）だけ
 		my %subclassof = (
-			'@type' => "Class",
 			'@id' => $pid,
 			);
 
@@ -770,7 +771,7 @@ sub checkDomain {
 
 	my $scof = $pcls->{'subClassOf'};
 	foreach my $scofe (@$scof) {
-		if ($scofe->{'@type'} ne 'Class') {
+		if ($scofe->{'@type'}) {	# 限定は飛ばす（上位クラスは素の参照）
 			next;
 		}
 
@@ -796,7 +797,7 @@ sub searchDomain {
 	$scof = $cls->{'subClassOf'};
 
 	foreach my $scofe (@$scof) {
-		if ($scofe->{'@type'} ne 'Class') {
+		if ($scofe->{'@type'}) {	# 限定は飛ばす（上位クラスは素の参照）
 			next;
 		}
 
