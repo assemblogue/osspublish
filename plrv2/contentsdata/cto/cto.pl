@@ -21,7 +21,7 @@ die("usage: cto.pl ontologyName prefix\n")
 # OMapブロック管理用
 #
 my @types, %typeMap, @OMap;
-# "| 属性" で書いたクラスの属性の値。全部読んでから属性の定義で型を決める
+# "| 属性" で書いた、クラスか属性の宣言の値。全部読んでから属性の定義で型を決める
 my @classValues;
 # ラベルを添えて定義した属性・クラスの ID（# 付き）。表で定義するクラス・属性にはラベルを付けるので、
 # どこにもラベルの無い名前は、ほかのオントロジーで定義されたものへの参照か、書き誤りである（checkLabels）
@@ -182,6 +182,11 @@ sub extract {
     my ($fields, $lc, $own) = @_;
 
     my $pcls="", $cls="", $prop="", $res;
+	# "| 属性" の値を書く宣言：この行で直近のクラスか属性（前の行から引き継いだカラムも
+	# 含む）。plrDart の追記R979——属性の集まりの種類（onto34）を属性に書く。
+	# カラムを1つ読むたびに、そのカラムで読んだクラスか属性（$res）にする（下の
+	# "$decl = $res"）ので、クラス・属性を読む分岐ごとに書かなくてよい
+	my $decl;
 	# "| 属性" カラムの直後のカラム番号と、その属性
 	my $valueCol = -1, $valueProp = "";
 	# 前の行から引き継いだ "| 属性" カラムの直後のカラム番号
@@ -205,10 +210,10 @@ sub extract {
 		}
 
 		if ($autoClassCount - 1 == $valueCol) {
-			# "| 属性" の右隣のカラム：直近のクラスのその属性の値（"0" も値）
+			# "| 属性" の右隣のカラム：直近のクラスか属性の、その属性の値（"0" も値）
 			die("Error: no value for `| $valueProp' at line $lc\n")
 				unless (defined($_) && $_ ne '');
-			push(@classValues, [$cls, $valueProp, $_, $lc]);
+			push(@classValues, [$decl, $valueProp, $_, $lc]);
 			$valueCol = -1;
 			next;
 		}
@@ -227,10 +232,12 @@ sub extract {
 		elsif ($mode eq "O") {
 			# オントロジー定義のみ扱う
 			if (/^\|\s*(\S+)/) {
-				# "| 属性"：右隣のカラムが、直近のクラスのその属性の値
-				# 前の行から引き継いだカラムなら扱わない（値を二度書かないため）
+				# "| 属性"：右隣のカラムが、この行で直近のクラスか属性（$decl）の、
+				# その属性の値。前の行から引き継いだカラムなら扱わない（値を二度
+				# 書かないため）
 				if ($autoClassCount - 1 >= $own) {
-					die("Error: `| $1' without class at line $lc\n") unless ($cls);
+					die("Error: `| $1' without class or property at line $lc\n")
+						unless ($decl);
 					$valueCol = $autoClassCount;
 					$valueProp = $1;
 				} else {
@@ -314,6 +321,9 @@ sub extract {
 				print STDERR "Error: Bad column `" . encode_utf8($_) . "' at line $lc\n";
 				last;
 			}
+			# このカラムで読んだクラスか属性（組込みのクラス・値域のクラスも）が、続く
+			# "| 属性" の値を書く宣言になる。コメント・予約語（値域の型）・tooltip のカラムでは変わらない
+			$decl = $res if (ref($res) eq 'HASH' && defined($res->{'@id'}));
 
 			# print Dumper %typeMap;
 		}
@@ -426,10 +436,18 @@ sub langValueOf {
 	return (defined($1) ? $1 : '', $2);
 }
 
-# クラスの属性に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
-# （属性の定義が値より後の行にあってもよい）。定義の無い属性ならエラー。ただし
-# 系の予約属性（isReservedProperty）は、宣言が無ければ文字列として書く。
-# 属性が ObjectProperty なら値はクラス等の ID、それ以外は値域に合わせる。
+# クラスか属性の宣言に値を書く（"| 属性" の右隣のカラム）。全部読んだ後に呼ぶ
+# （属性の定義が値より後の行にあってもよい）。
+# * 系の予約属性（isReservedProperty）は、宣言が無くても reservedPropertyValue の形で書く。
+#   予約属性はクラスレベル属性なので、属性の宣言には書けない
+# * 表で定義した属性（isDefinedProperty）は、ObjectProperty なら値はクラス等の ID
+#   （checkObjectValue で確かめる）、それ以外は値域に合わせる
+# * 表で定義していない属性（系の onto34 など。plrDart の追記R979）は、ほかの名前と同じく
+#   ラベルの無い属性として知らせ（checkLabels）、値を書く。値域が分からないので、値の綴りが
+#   表のクラスの名前の形（# か、_ を除いて大文字で始まる。または _ と小文字で始まる。
+#   extract がクラスと読む形）なら ID、ほかは文字列にする。ID の値も、表に定義が無ければ
+#   ラベルの無いクラスとして知らせる（osspublish #9 の (b)。橋田さんの決め、2026-11-24）
+# * 表でクラスとして定義した名前は属性でないので止める
 # **鍵は # 付きの属性 ID にする**（"#builtInFunction" など。plrDart の追記R957）
 # ——素の名前で書くと、読む側でオントロジーの ID が前に付き、別の鍵になる
 sub resolveClassPropertyValues {
@@ -447,21 +465,109 @@ sub resolveClassPropertyValues {
 			next;
 		}
 
-		my $p = $typeMap{"#$propId"};
-		unless ($p) {
-			die("Error: undefined property `$propId' in `| $propId' at line $line\n")
-				unless (isReservedProperty($propId));
-			$cls->{"#$propId"} = ($propId eq "linkPath")
-				? resolveLinkPath($val, $line) : $val;
+		if (isReservedProperty($propId) && !isDefinedProperty($propId)) {
+			die("Error: class-level property `| $propId' on a property at line $line\n")
+				unless (isClassDeclaration($cls));
+			$cls->{"#$propId"} = reservedPropertyValue($propId, $val, $line);
 			next;
 		}
+
+		my $p = $typeMap{"#$propId"};
+		die("Error: class `$propId' in `| $propId' at line $line (write a property)\n")
+			if ($p && $p->{'@type'} eq "Class");
+		unless ($p) {
+			noteNameWritten('property', $propId, $line);
+			(my $id = $val) =~ s/^#//;
+			if ($val =~ /^#/ || $id =~ /^_?[A-Z]/ || $id =~ /^_[a-z]/) {
+				noteNameWritten('class', $id, $line);
+				$cls->{"#$propId"} = { '@id' => "#$id" };
+			} else {
+				$cls->{"#$propId"} = $val;
+			}
+			next;
+		}
+		checkDeclarationKind($cls, $p, $propId, $line);
 		if ($p->{'@type'} eq "ObjectProperty") {
 			$val =~ s/^#//;
+			checkObjectValue($p, $propId, $val, $line);
 			$cls->{"#$propId"} = { '@id' => "#$val" };
 		} else {
 			$cls->{"#$propId"} = valueOfRange($p->{'range'}, $val);
 		}
 	}
+}
+
+# 宣言 [$decl] がクラスの宣言か（組込みのクラスも。ほかは属性の宣言）
+sub isClassDeclaration {
+	my ($decl) = @_;
+	return ($decl->{'builtin'} || ($decl->{'@type'} // '') eq "Class");
+}
+
+# 表で定義した属性 [$p]（"| $propId"）の定義域が、クラスの集まり（#ONTO1）か属性の集まり（#ONTO3）か、
+# その下位なら、値を書く宣言 [$decl] はそれぞれクラスか属性でなければならない（Ontology.xlsx で、
+# 属性のメタ属性 onto34 をクラスに書く、などの書き違いで止める。予約属性を属性に書いたときと対）。
+# 定義域がほかのクラスなら見ない
+sub checkDeclarationKind {
+	my ($decl, $p, $propId, $line) = @_;
+	my $domain = $p->{'domain'};
+	return unless (defined($domain) && !ref($domain));
+	die("Error: property-level property `| $propId' on a class at line $line\n")
+		if (isSubClassOrSelf($domain, "#ONTO3") && isClassDeclaration($decl));
+	die("Error: class-level property `| $propId' on a property at line $line\n")
+		if (isSubClassOrSelf($domain, "#ONTO1") && !isClassDeclaration($decl));
+}
+
+# ObjectProperty [$p]（"| $propId"）の値 [$val]（# を外した ID）を確かめる——書き違い
+# （"_onto34" など）で止める：
+# * 属性の値域が選択肢のクラス（setRangeClass が作る _AutomaticGeneration_…_SelectorClass）
+#   なら、値はその選択肢（その下位のクラス）でなければならない。ほかの値域（compensatesWith
+#   の ONTO1 など、値がクラスそのものであるもの）では、下位かを見ない
+# * 表に定義の無い値は、ほかの名前と同じく、ラベルの無いクラスとして知らせる（checkLabels）
+sub checkObjectValue {
+	my ($p, $propId, $val, $line) = @_;
+	(my $range = $p->{'range'} // '') =~ s/^#//;
+	if ($range =~ /^_AutomaticGeneration_.*_SelectorClass$/ && $typeMap{"#$range"}) {
+		die("Error: `$val' is not in the range `$range' of `| $propId' at line $line\n")
+			unless (isSubClassOrSelf("#$val", "#$range"));
+		return;
+	}
+	noteNameWritten('class', $val, $line);
+}
+
+# クラス [$id] が [$super] か、その下位（subClassOf をたどる。表の定義だけを見る）か
+sub isSubClassOrSelf {
+	my ($id, $super) = @_;
+	my %seen;
+	my @queue = ($id);
+	while (@queue) {
+		my $c = shift(@queue);
+		next if ($seen{$c}++);
+		return 1 if ($c eq $super);
+		my $cls = $typeMap{$c} or next;
+		foreach my $s (@{$cls->{'subClassOf'} || []}) {
+			push(@queue, $s->{'@id'}) if (ref($s) eq 'HASH' && $s->{'@id'});
+		}
+	}
+	return 0;
+}
+
+# 系の予約属性 [$propId] の値 [$val] を、書き出す形にする：
+# * builtInFunction：文字列のまま
+# * linkPath：属性の道（resolveLinkPath。plrDart の追記R971・R972）
+# （elementProperty・elementTransitive は plrDart の追記R983 でやめた——要素は、クラスが
+# 制限で持つと宣言した hasElement の下位属性で決まる）
+# aiPrompt は言語ごとの文字列なので、resolveClassPropertyValues が先に扱う
+sub reservedPropertyValue {
+	my ($propId, $val, $line) = @_;
+	return resolveLinkPath($val, $line) if ($propId eq "linkPath");
+	return $val;
+}
+
+# 属性 [$id]（# を外したもの）が、表で定義されているか。クラスの ID は属性ではない
+sub isDefinedProperty {
+	my ($id) = @_;
+	my $p = $typeMap{"#$id"};
+	return ($p && $p->{'@type'} ne "Class");
 }
 
 # linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
