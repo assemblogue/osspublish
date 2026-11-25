@@ -152,10 +152,11 @@ sub checkLabels {
 # 予約クラスのチェック
 # 予約クラスとマッチしたらその語を返す。マッチしなかった場合、空dataを返す。
 sub checkReservedClass {
+    my ($id) = @_;
     # 予約クラス
     my @rsvcls = ("Channel", "DataSetting", "PlrId");
 
-    return checkWord(\@rsvcls, $_);
+    return checkWord(\@rsvcls, $id);
 }
 
 sub checkWord {
@@ -240,6 +241,17 @@ sub extract {
 				# 宣言はせず、続く欄の属性をそのクラスの属性にする（domain は値域と
 				# 同じく # を付けない）。ラベルは組込みのものを使うので読まない（osspublish#3）
 				$cls = $res = builtinClass(checkReservedClass($_));
+				$pcls = $cls;
+			} elsif (($autoClassCount > 1) && $pcls && !$prop && checkReservedClass($_)) {
+				# クラスの右隣（間に属性の無い所）の予約クラスは、表のクラス #名前 を宣言する。
+				# 上位は、左のクラスと組込みのクラス（# を付けない名前。組込みのものに解決される）。
+				# 組込みのクラスは上書きしない（id が違う）。系のオントロジーで、組込みのクラスを
+				# 表のクラスの下位に入れるため（Channel を ONTOc1 の下位に。plrDart#511 の行12）。
+				# 属性の右隣なら値域（次の分岐）、A 列なら組込みのクラスそのもの（前の分岐）
+				my $name = checkReservedClass($_);
+				my ($id, $label) = split(/[ \n]+/, $_, 2);
+				$cls = $res = parseClass($id, $label, $pcls);
+				setSubClassOf($cls, $name);
 				$pcls = $cls;
 			} elsif (($autoClassCount > 1) && checkReservedClass($_)) {
 				my ($id) = split(/[ \n]+/, $_, 2);
@@ -1117,6 +1129,8 @@ sub outputOntology {
 	$id =~ s/^#//;
 
 	if ($t->{'@type'} eq 'Class') {
+	    # 予約クラスの名前（Channel など）は組込みのクラスを指すので、表のクラス #Channel に向けない
+	    next if (checkReservedClass($id) eq $id);
 	    $myContext{$id} = "$prefix:$id";
 	} else {
 	    if ($t->{'range'} =~ /#?_?[A-Z]/) {
