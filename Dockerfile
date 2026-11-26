@@ -23,4 +23,6 @@ COPY --from=base /usr/local/bundle /usr/local/bundle
 COPY --from=base /usr/lib/x86_64-linux-gnu/perl /usr/lib/x86_64-linux-gnu/perl
 COPY --from=base /opt/perl5 /opt/perl5
 COPY . .
+# app.rb (via puma) uses timeout
+RUN timeout 1 true
 CMD bundle exec puma -e ${RACK_ENV:-test}

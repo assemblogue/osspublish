@@ -88,14 +88,44 @@ class AppTest < Test::Unit::TestCase
     assert_include unzipped.keys, 'index.json'
   end
 
+  def test_it_names_each_zip_differently
+    omit_if(ENV['APP_ENV'] == 'production', 'rack-test only')
+
+    names = Array.new(2) do
+      post_for_csv('foo,bar')
+      last_response.headers['content-disposition'][/filename="?([^";]+)/, 1]
+    end
+
+    names.each { |name| assert_match(/\Aconverted-\d{8}-\h+\.zip\z/, name) }
+    assert_not_equal names[0], names[1]
+  end
+
   def test_it_rejects_request_without_files
     omit_if(ENV['APP_ENV'] == 'production', 'rack-test only')
 
     post '/convert'
 
     assert_equal 400, last_response.status
-    assert_match %r{\Aapplication/json}, last_response.content_type
-    assert_equal({ 'error' => 'No files uploaded' }, JSON.parse(last_response.body))
+    assert_equal 'No files uploaded', last_response.body
+  end
+
+  def test_it_rejects_too_many_files
+    omit_if(ENV['APP_ENV'] == 'production', 'rack-test only')
+
+    uploads = Array.new(MAX_FILES + 1) do |i|
+      Rack::Test::UploadedFile.new(StringIO.new('foo,bar'), 'text/csv', original_filename: "f#{i}.csv")
+    end
+    post '/convert', 'file[]' => uploads
+
+    assert_equal 400, last_response.status
+    assert_equal "Too many files (max #{MAX_FILES})", last_response.body
+  end
+
+  def test_it_reports_a_command_that_runs_too_long
+    result = run_command_async(['sleep', '10'], Logger.new(nil), timeout: 1).value
+
+    assert_equal 124, result[:exit_status]
+    assert_equal 'timed out after 1 seconds', result[:message]
   end
 
   def test_it_converts_multiple_files

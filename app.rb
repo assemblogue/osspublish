@@ -13,6 +13,11 @@ require 'securerandom'
 require 'pp'
 require './gen_com'
 
+# Limits against overload
+# See also http_content_length_limit in config/puma.rb
+COMMAND_TIMEOUT_SECONDS = 15
+MAX_FILES = 10
+
 def spreadsheet_to_csv(path, tmpdir)
   begin
     xlsx = Roo::Spreadsheet.open(path)
@@ -30,16 +35,18 @@ end
 #   nil                                    exit 0 with no stderr
 #   { command:, exit_status: 0, message: } exit 0 with stderr (a warning)
 #   { command:, exit_status:, message: }   non-zero exit, or nil if it could not run
-def run_command_async(command, logger, stdin_data: nil)
+# The command is killed after `timeout` seconds (coreutils timeout: exit status 124).
+def run_command_async(command, logger, stdin_data: nil, timeout: COMMAND_TIMEOUT_SECONDS)
   cmd = command.join(' ')
 
   Thread.new do
     logger.info { "Command: #{cmd}" }
-    stdout, stderr, status = Open3.capture3(*command, stdin_data:)
+    stdout, stderr, status = Open3.capture3('timeout', '-k', '5', timeout.to_s, *command, stdin_data:)
     logger.debug { "Stdout: #{stdout}" }
     logger.info { "Stderr: #{stderr}" } unless stderr.empty?
 
-    { command: cmd, exit_status: status.exitstatus, message: stderr.strip } unless status.success? && stderr.strip.empty?
+    message = status.exitstatus == 124 ? "timed out after #{timeout} seconds" : stderr.strip
+    { command: cmd, exit_status: status.exitstatus, message: } unless status.success? && stderr.strip.empty?
   rescue StandardError => e
     logger.error { "Command failed: #{cmd}: #{e.full_message}" }
 
@@ -118,30 +125,28 @@ class App < Sinatra::Base
   post '/convert' do
     # Uploaded files are hashes, sent as `file[]` (an array) or as a single `file`.
     files = [params['file']].flatten.grep(Hash)
-    halt 400, { 'Content-Type' => 'application/json' }, { error: 'No files uploaded' }.to_json if files.empty?
+    halt 400, 'No files uploaded' if files.empty?
+    halt 400, "Too many files (max #{MAX_FILES})" if files.size > MAX_FILES
 
-    logfile = Tempfile.create(['log', '.txt']).path
-    puts "Running #{settings.environment}, logging in #{logfile}"
+    # The tmp dir for intermediate files will be removed when this block ends
+    zip_data = Dir.mktmpdir do |tmpdir|
+      logfile = File.join(tmpdir, 'log.txt')
+      zip = File.join(tmpdir, 'converted.zip')
+      puts "Running #{settings.environment}, logging in #{logfile}"
 
-    logfile_io = if settings.environment == :test
-                   MultiIO.new(STDERR, File.open(logfile, 'a'))
-                 else
-                   File.open(logfile, 'w')
-                 end
-    logger = Logger.new(logfile_io).tap do |x|
-      x.level = if settings.environment == :production
-                  Logger::INFO
-                else
-                  Logger::DEBUG
-                end
-    end
+      logfile_file = File.open(logfile, 'w')
+      logfile_io = settings.environment == :test ? MultiIO.new(STDERR, logfile_file) : logfile_file
+      logger = Logger.new(logfile_io).tap do |x|
+        x.level = if settings.environment == :production
+                    Logger::INFO
+                  else
+                    Logger::DEBUG
+                  end
+      end
 
-    logger.debug { request.env.inspect }
+      logger.debug { request.env.inspect }
+      logger.info("Reading #{files.inspect}")
 
-    zip = Tempfile.create(['converted', '.zip']).path
-    logger.info("Reading #{files.inspect}")
-
-    Dir.mktmpdir do |tmpdir|
       Zip::File.open(zip, create: true) do |zipfile|
         index = {}
         results = files.map { |file| convert_file(file, tmpdir, logger) }
@@ -177,11 +182,16 @@ class App < Sinatra::Base
           zipfile.add('index.json', file)
           zipfile.add('log.txt', logfile)
           zipfile.commit
-
-          send_file(zip, filename: File.basename(zip))
         end
       end
+
+      File.binread(zip)
+    ensure
+      logfile_file&.close
     end
+
+    attachment "converted-#{Time.now.strftime('%Y%m%d')}-#{SecureRandom.hex(4)}.zip"
+    zip_data
   end
 
   get '/env' do
