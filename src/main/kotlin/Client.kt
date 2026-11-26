@@ -205,17 +205,21 @@ class Client {
 			}
 		}
 
-		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: HttpUrl): Map<String, String> {
+		fun convertUsingOnlineService(content: ByteArray, name: String, endpoint: HttpUrl): Map<String, String> =
+			convertUsingOnlineService(listOf(name to content), endpoint)
+
+		fun convertUsingOnlineService(files: List<Pair<String, ByteArray>>, endpoint: HttpUrl): Map<String, String> {
 			val client = OkHttpClient.Builder()
 				.connectTimeout(60000L, TimeUnit.MILLISECONDS)
 				.callTimeout(60000L, TimeUnit.MILLISECONDS)
 				.readTimeout(60000L, TimeUnit.MILLISECONDS)
 				.build()
-			val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-				.addFormDataPart(
-					"file", name,
-					content.toRequestBody("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".toMediaType()))
-				.build()
+			val mediaType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".toMediaType()
+			val requestBody = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+				files.forEach { (name, content) ->
+					addFormDataPart("file[]", name, content.toRequestBody(mediaType))
+				}
+			}.build()
 			val request = Request.Builder()
 				.url(endpoint)
 				.post(requestBody)
@@ -225,6 +229,45 @@ class Client {
 				return unzipInputStream(response.body!!.byteStream())
 			} else {
 				throw ClientException("Bad response: " + response)
+			}
+		}
+
+		/**
+		 * Lists the (input file name, message) of the entries under `field` ('error' or 'warning')
+		 * in the `response` entries of index.json.
+		 */
+		private fun conversionMessages(node: JsonNode, field: String): List<Pair<String, String>> {
+			fun unexpected(): Nothing = throw ClientException("unexpected JSON: $node")
+
+			// a missing or null node counts as an empty array
+			fun JsonNode.requireArrayOrMissing(): JsonNode =
+					if (isMissingNode || isNull || isArray) this else unexpected()
+
+			return node.path("response").requireArrayOrMissing().flatMap { response ->
+				val file = response.get("file")?.asText() ?: unexpected()
+				response.path(field).requireArrayOrMissing().map { entry ->
+					file to (entry.get("message")?.asText() ?: unexpected())
+				}
+			}
+		}
+
+		/** Lists the conversion failures reported in the `response` entries of index.json. */
+		fun conversionFailures(node: JsonNode): List<String> =
+			conversionMessages(node, "error").map { (file, message) -> "$file: $message" }
+
+		/**
+		 * Lists the warnings of conversions that succeeded, reported in the `response` entries
+		 * of index.json. A message of several lines is split so that every line names its file.
+		 */
+		fun conversionWarnings(node: JsonNode): List<String> =
+			conversionMessages(node, "warning").flatMap { (file, message) ->
+				message.lines().filter { it.isNotBlank() }.map { "$file: $it" }
+			}
+
+		fun requireSuccessfulConversion(node: JsonNode) {
+			val failures = conversionFailures(node)
+			if (failures.isNotEmpty()) {
+				throw ClientException("Conversion failed:\n${failures.joinToString("\n")}")
 			}
 		}
 
@@ -343,6 +386,7 @@ class Client {
 				val ossNode = getPropOssOrCreate(root)
 
 				if (args.isNotEmpty()) {
+					// TODO: A failure in one argument should not stop the others.
 					args.forEach { arg ->
 						val fileEntries = when {
 							arg.startsWith("http") -> {
@@ -379,9 +423,11 @@ class Client {
 						if (fileEntries["index.json"] == null) {
 							throw ClientException("index.json is missing: ${arg}, ${fileEntries.keys}")
 						}
-						val filesToUpload = filesToUpload(
-							readJsonTreeFromString(fileEntries["index.json"]!!), fileEntries
-						).associate { Pair(generateOssId(it, storage.userId), it) }
+
+						val index = readJsonTreeFromString(fileEntries["index.json"]!!)
+						conversionWarnings(index).forEach { System.err.println(it) }
+						requireSuccessfulConversion(index)
+						val filesToUpload = filesToUpload(index, fileEntries).associate { Pair(generateOssId(it, storage.userId), it) }
 						val filesInStorage = filesInStorage(ossNode).toList().associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }
 						if (filesToUpload.isEmpty()) {
 							throw ClientException("No file found")
