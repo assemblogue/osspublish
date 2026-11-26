@@ -161,7 +161,7 @@ class AppTest < Test::Unit::TestCase
 
     unzipped = post_uploads(
       [
-        { content: "\"]O Bad Bad\",\n\"Event Event\",\n,\"| missingProperty\",\"value\"\n", name: 'bad.csv' },
+        { content: "\"]O Bad Bad\",\n\"Event Event\",\n,X,| count,,\n", name: 'bad.csv' },
         { content: "\"]O Good Good\",\n\"Event Event\"\n", name: 'good.csv' }
       ]
     )
@@ -205,7 +205,7 @@ class AppTest < Test::Unit::TestCase
     )
     index = JSON.parse(unzipped['index.json'])
 
-    assert_equal [{ 'file' => 'dup.csv', 'error' => [] }] * 2, index['response']
+    assert_equal [{ 'file' => 'dup.csv', 'error' => [], 'warning' => [] }] * 2, index['response']
     assert_equal %w[First Second], index['ontology'].map { |e| e['id'] }.sort
     assert_equal 2, index['ontology'].map { |e| e['file'] }.uniq.length
     index['ontology'].each { |e| assert_include unzipped.keys, e['file'] }
@@ -266,7 +266,7 @@ class AppTest < Test::Unit::TestCase
       <<~CSV
         "]O Base Base",
         "Event Event",
-        ,"| missingProperty","value"
+        ,X,| count,,
       CSV
     )
 
@@ -279,7 +279,40 @@ class AppTest < Test::Unit::TestCase
     end
 
     assert_not_nil error
-    assert_include error['message'], "Error: undefined property `missingProperty'"
+    assert_include error['message'], "Error: no value for `| count'"
+  end
+
+  def test_it_includes_warning_response_for_successful_conversion_with_warning
+    unzipped = post_for_csv(
+      <<~CSV
+        "]O Base Base",
+        "Event Event","begin","dateTime"
+      CSV
+    )
+
+    index = JSON.parse(unzipped['index.json'])
+    response = index['response']
+    assert_equal 1, response.length
+    assert_equal [], response[0]['error']
+    assert_equal 1, response[0]['warning'].length
+
+    warning = response[0]['warning'][0]
+    assert_include warning['command'], 'cto.pl'
+    assert_equal 0, warning['exit_status']
+    assert_include warning['message'], "Warning: property `begin'"
+    # the conversion went on
+    assert_equal ['Base'], index['ontology'].map { |e| e['id'] }
+  end
+
+  def test_it_includes_empty_warning_response_for_clean_conversion
+    unzipped = post_for_csv(
+      <<~CSV
+        "]O Base Base",
+        "Event Event"
+      CSV
+    )
+
+    assert_equal [], JSON.parse(unzipped['index.json'])['response'][0]['warning']
   end
 
   def test_it_gives_stylesheet

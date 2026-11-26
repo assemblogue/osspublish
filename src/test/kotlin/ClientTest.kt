@@ -2,6 +2,7 @@
 
 import Client.Companion.authenticateAndGetStorage
 import Client.Companion.conversionFailures
+import Client.Companion.conversionWarnings
 import Client.Companion.convertUsingOnlineService
 import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
@@ -269,7 +270,7 @@ class ClientTest {
 		""".trimIndent())
 
 		assertEquals(
-			listOf("bad1.csv: syntax error (perl cto.pl)", "bad2.xlsx: Zip::Error: broken"),
+			listOf("bad1.csv: syntax error", "bad2.xlsx: Zip::Error: broken"),
 			conversionFailures(node))
 	}
 
@@ -295,6 +296,43 @@ class ClientTest {
 	}
 
 	@Test
+	fun `conversionWarnings lists the warnings line by line with the file name`() {
+		val node = ObjectMapper().readTree("""
+		{
+		  "response": [
+		    {"file": "a.csv", "error": [], "warning": [
+		      {"command": "perl cto.pl", "exit_status": 0, "message": "Warning: one\nWarning: two\n"}
+		    ]},
+		    {"file": "clean.csv", "error": [], "warning": []},
+		    {"file": "old_server.csv", "error": []},
+		    {"file": "null_warning.csv", "warning": null}
+		  ]
+		}
+		""".trimIndent())
+
+		assertEquals(listOf("a.csv: Warning: one", "a.csv: Warning: two"), conversionWarnings(node))
+		assertEquals(listOf<String>(), conversionFailures(node))
+	}
+
+	@Test
+	fun `conversionWarnings is empty when there is no response`() {
+		assertEquals(listOf<String>(), conversionWarnings(ObjectMapper().readTree("{}")))
+	}
+
+	@Test
+	fun `conversion error message does not include the command`() {
+		val node = ObjectMapper().readTree("""
+		{"response": [{"file": "x.csv", "error": [
+		  {"command": "perl plrv2/contentsdata/cto/cto.pl /tmp/x", "exit_status": 255, "message": "Error: no value for `| count' at line 3"}
+		]}]}
+		""".trimIndent())
+
+		val ex = assertThrows(ClientException::class.java) { requireSuccessfulConversion(node) }
+
+		assertEquals("Conversion failed:\nx.csv: Error: no value for `| count' at line 3", ex.message)
+	}
+
+	@Test
 	fun `requireSuccessfulConversion reports conversion error`() {
 		val node = ObjectMapper().readTree("""
 		{
@@ -305,7 +343,7 @@ class ClientTest {
 		        {
 		          "command": "perl plrv2/contentsdata/cto/cto.pl /tmp/x",
 							"exit_status": 255,
-		          "message": "Error: undefined property `missingProperty' in `| missingProperty' at line 3"
+		          "message": "Error: no value for `| count' at line 3"
 		        }
 		      ]
 		    }
@@ -317,6 +355,6 @@ class ClientTest {
 			requireSuccessfulConversion(node)
 		}
 
-		assertTrue(ex.message!!.contains("input_with_error.csv: Error: undefined property"))
+		assertTrue(ex.message!!.contains("input_with_error.csv: Error: no value for"))
 	}
 }

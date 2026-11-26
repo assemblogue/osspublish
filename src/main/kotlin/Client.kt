@@ -232,8 +232,11 @@ class Client {
 			}
 		}
 
-		/** Lists the conversion failures reported in the `response` entries of index.json. */
-		fun conversionFailures(node: JsonNode): List<String> {
+		/**
+		 * Lists the (input file name, message) of the entries under `field` ('error' or 'warning')
+		 * in the `response` entries of index.json.
+		 */
+		private fun conversionMessages(node: JsonNode, field: String): List<Pair<String, String>> {
 			fun unexpected(): Nothing = throw ClientException("unexpected JSON: $node")
 
 			// a missing or null node counts as an empty array
@@ -242,13 +245,24 @@ class Client {
 
 			return node.path("response").requireArrayOrMissing().flatMap { response ->
 				val file = response.get("file")?.asText() ?: unexpected()
-				response.path("error").requireArrayOrMissing().map { error ->
-					val message = error.get("message")?.asText() ?: unexpected()
-					val command = error.path("command").asText().takeIf { it.isNotBlank() }
-					"$file: $message" + (command?.let { " ($it)" } ?: "")
+				response.path(field).requireArrayOrMissing().map { entry ->
+					file to (entry.get("message")?.asText() ?: unexpected())
 				}
 			}
 		}
+
+		/** Lists the conversion failures reported in the `response` entries of index.json. */
+		fun conversionFailures(node: JsonNode): List<String> =
+			conversionMessages(node, "error").map { (file, message) -> "$file: $message" }
+
+		/**
+		 * Lists the warnings of conversions that succeeded, reported in the `response` entries
+		 * of index.json. A message of several lines is split so that every line names its file.
+		 */
+		fun conversionWarnings(node: JsonNode): List<String> =
+			conversionMessages(node, "warning").flatMap { (file, message) ->
+				message.lines().filter { it.isNotBlank() }.map { "$file: $it" }
+			}
 
 		fun requireSuccessfulConversion(node: JsonNode) {
 			val failures = conversionFailures(node)
@@ -411,6 +425,7 @@ class Client {
 						}
 
 						val index = readJsonTreeFromString(fileEntries["index.json"]!!)
+						conversionWarnings(index).forEach { System.err.println(it) }
 						requireSuccessfulConversion(index)
 						val filesToUpload = filesToUpload(index, fileEntries).associate { Pair(generateOssId(it, storage.userId), it) }
 						val filesInStorage = filesInStorage(ossNode).toList().associate { x -> Pair(normalizeOssId(generateOssId(x)), x) }

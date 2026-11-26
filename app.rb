@@ -26,8 +26,10 @@ def spreadsheet_to_csv(path, tmpdir)
   path
 end
 
-# Runs the command in a thread whose value is nil on success, or the error entry
-# { command:, exit_status:, message: } (exit_status is nil if it could not run).
+# Runs the command in a thread. The thread's value is one of:
+#   nil                                    exit 0 with no stderr
+#   { command:, exit_status: 0, message: } exit 0 with stderr (a warning)
+#   { command:, exit_status:, message: }   non-zero exit, or nil if it could not run
 def run_command_async(command, logger, stdin_data: nil)
   cmd = command.join(' ')
 
@@ -37,7 +39,7 @@ def run_command_async(command, logger, stdin_data: nil)
     logger.debug { "Stdout: #{stdout}" }
     logger.info { "Stderr: #{stderr}" } unless stderr.empty?
 
-    { command: cmd, exit_status: status.exitstatus, message: stderr.strip } unless status.success?
+    { command: cmd, exit_status: status.exitstatus, message: stderr.strip } unless status.success? && stderr.strip.empty?
   rescue StandardError => e
     logger.error { "Command failed: #{cmd}: #{e.full_message}" }
 
@@ -46,7 +48,8 @@ def run_command_async(command, logger, stdin_data: nil)
 end
 
 # Converts one uploaded file.
-# Returns { file:, error: [...], outputs: [path, ...] }.
+# Returns { file:, error: [...], warning: [...], outputs: [path, ...] }.
+# error and warning entries are { command:, exit_status:, message: }
 def convert_file(file, tmpdir, logger)
   tempfile = file[:tempfile]
   filename = File.basename(file[:filename].to_s.empty? ? tempfile.path : file[:filename])
@@ -56,10 +59,10 @@ def convert_file(file, tmpdir, logger)
   csv_contents = File.binread(spreadsheet_to_csv(tempfile.path, tmpdir))
   base = File.join(tmpdir, File.basename(tempfile.path, '.csv'))
 
-  errors = [
+  warnings, errors = [
     run_command_async(['perl', 'plrv2/contentsdata/cto/cto.pl', base, ''], logger, stdin_data: csv_contents),
     run_command_async(['perl', 'plrv2/contentsdata/cto/cts.pl', base, ''], logger, stdin_data: csv_contents)
-  ].filter_map(&:value)
+  ].filter_map(&:value).partition { |result| result[:exit_status] == 0 }
 
   outputs = if errors.empty?
               Dir.glob("#{base}*.jsonld")
@@ -68,11 +71,11 @@ def convert_file(file, tmpdir, logger)
               []
             end
 
-  { file: filename, error: errors, outputs: }
+  { file: filename, error: errors, warning: warnings, outputs: }
 rescue StandardError => e
   logger.error { "Conversion failed: #{e.full_message}" }
 
-  { file: filename || 'unknown', error: [{ message: "#{e.class}: #{e.message}" }], outputs: [] }
+  { file: filename || 'unknown', error: [{ message: "#{e.class}: #{e.message}" }], warning: [], outputs: [] }
 end
 
 # proxy IO for multiple IOs
@@ -164,7 +167,7 @@ class App < Sinatra::Base
           end
         end
 
-        index[:response] = results.map { |result| result.slice(:file, :error) }
+        index[:response] = results.map { |result| result.slice(:file, :error, :warning) }
 
         Tempfile.create('tmp') do |file|
           file.puts(index.to_json)
