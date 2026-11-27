@@ -12,4 +12,5 @@
   <entry key="file-not-supported">サポートされていないファイルです: {0}</entry>
   <entry key="empty-content">内容が空です: {0}</entry>
   <entry key="using-endpoint-url">{0}を利用します</entry>
+  <entry key="ontology-name-not-found">スプレッドシートの先頭セル（A1）からオントロジー名を取得できませんでした: {0}</entry>
 </properties>
