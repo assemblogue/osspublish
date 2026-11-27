@@ -572,30 +572,62 @@ sub isDefinedProperty {
 
 # linkPath の値（arg1 から arg2 へたどる属性の ID を空白で区切った並び。逆向きに
 # たどる属性には - を付ける）を、歩みの @list にする（plrDart の追記R971・R972）。
-# 歩みの形は SHACL の属性の道に合わせ、順向きは属性の ID、逆向きは inversePath で包む。
+# 順向きの属性は {"@id": 属性}。逆向きの印「-」と、関係のノード自身の位置の印「|」は、どちらも
+# 並びの中の文字列にする（plrDart：橋田さんの決め 11/27。「-」はその次の属性を逆向きに歩む）。
 # 例："truthValue -isTrue" →
-#   {"@list": [{"@id": "#truthValue"}, {"inversePath": {"@id": "#isTrue"}}]}
-# 道の形の誤り（空の道・- の後に何も無い・属性の所にクラスの名前）はエラーで止める。道の属性に表の中の
-# ラベルの定義が無ければ、ほかの名前と同じく、ラベルの無い属性として知らせる（noteNameWritten・checkLabels）
+#   {"@list": [{"@id": "#truthValue"}, "-", {"@id": "#isTrue"}]}
+# 例："onto5 | ontoA" →
+#   {"@list": [{"@id": "#onto5"}, "|", {"@id": "#ontoA"}]}
+# 「-」は属性に付けても（-isTrue）、離して書いても（- isTrue）よい。
+# 道の形の誤り（空の道・「-」の後に属性が無い・属性の所にクラスの名前・「|」が先頭・末尾・2つ以上）は
+# エラーで止める。道の属性に表の中のラベルの定義が無ければ、ほかの名前と同じく、ラベルの無い属性として
+# 知らせる（noteNameWritten・checkLabels）
 sub resolveLinkPath {
 	my ($val, $line) = @_;
 	my @steps;
+	my $bars = 0;
+	my $props = 0;
+	my @tokens;
 	foreach my $s (split(/\s+/, $val)) {
 		next if ($s eq '');
-		my $inverse = ($s =~ s/^-//);
+		# -isTrue は「-」と isTrue の2つ
+		if ($s ne '-' && $s =~ s/^-//) {
+			push(@tokens, '-', $s);
+		}
+		else {
+			push(@tokens, $s);
+		}
+	}
+	foreach my $s (@tokens) {
+		# 「-」の後には属性だけが来る
+		die("Error: `$s' after `-' in `| linkPath' at line $line (write a property after `-')\n")
+			if (@steps && $steps[-1] eq '-' && ($s eq '-' || $s eq '|'));
+		if ($s eq '-') {
+			push(@steps, '-');
+			next;
+		}
+		# 「|」は属性でなく、関係のノード自身の位置の印。2つの属性の間にだけ来て、1つの道に多くても1つ
+		if ($s eq '|') {
+			die("Error: `|' at the head of `| linkPath' at line $line (write it between two properties)\n")
+				unless ($props);
+			die("Error: more than one `|' in `| linkPath' at line $line\n") if ($bars++);
+			push(@steps, '|');
+			next;
+		}
 		$s =~ s/^#//;
-		die("Error: no property after `-' in `| linkPath' at line $line\n")
-			if ($s eq '');
 		my $p = $typeMap{"#$s"};
 		# 表でクラスとして定義した名前は止める。表に無い名前は、系のクラスか書き誤りかは分からないので、
 		# ほかの名前と同じく、ラベルの無い属性として知らせる（綴りでは見分けない）
 		die("Error: class `$s' in `| linkPath' at line $line (write a property)\n")
 			if ($p && $p->{'@type'} eq "Class");
 		noteNameWritten('property', $s, $line);
-		my $step = { '@id' => "#$s" };
-		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
+		push(@steps, { '@id' => "#$s" });
+		$props++;
 	}
-	die("Error: no property in `| linkPath' at line $line\n") unless (@steps);
+	die("Error: no property in `| linkPath' at line $line\n") unless ($props);
+	die("Error: no property after `-' in `| linkPath' at line $line\n") if ($steps[-1] eq '-');
+	die("Error: `|' at the tail of `| linkPath' at line $line (write it between two properties)\n")
+		if ($steps[-1] eq '|');
 	return { '@list' => \@steps };
 }
 
