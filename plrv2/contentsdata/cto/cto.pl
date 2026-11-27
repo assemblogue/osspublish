@@ -575,13 +575,25 @@ sub isDefinedProperty {
 # 歩みの形は SHACL の属性の道に合わせ、順向きは属性の ID、逆向きは inversePath で包む。
 # 例："truthValue -isTrue" →
 #   {"@list": [{"@id": "#truthValue"}, {"inversePath": {"@id": "#isTrue"}}]}
+# 関係のノード自身の位置の印「|」は、並びの中の文字列 "|" にする。例："onto5 | ontoA" →
+#   {"@list": [{"@id": "#onto5"}, "|", {"@id": "#ontoA"}]}
 # 道の形の誤り（空の道・- の後に何も無い・属性の所にクラスの名前）はエラーで止める。道の属性に表の中の
 # ラベルの定義が無ければ、ほかの名前と同じく、ラベルの無い属性として知らせる（noteNameWritten・checkLabels）
 sub resolveLinkPath {
 	my ($val, $line) = @_;
 	my @steps;
+	my $bars = 0;
 	foreach my $s (split(/\s+/, $val)) {
 		next if ($s eq '');
+		# 「|」は属性でなく、関係のノード自身の位置の印（plrDart：橋田さんの決め 11/27）。並びの中の文字列 "|"
+		# として書き出す。2つの属性の間にだけ来て、1つの道に多くても1つ
+		if ($s eq '|') {
+			die("Error: `|' at the head of `| linkPath' at line $line (write it between two properties)\n")
+				unless (@steps);
+			die("Error: more than one `|' in `| linkPath' at line $line\n") if ($bars++);
+			push(@steps, '|');
+			next;
+		}
 		my $inverse = ($s =~ s/^-//);
 		$s =~ s/^#//;
 		die("Error: no property after `-' in `| linkPath' at line $line\n")
@@ -596,6 +608,8 @@ sub resolveLinkPath {
 		push(@steps, $inverse ? { 'inversePath' => $step } : $step);
 	}
 	die("Error: no property in `| linkPath' at line $line\n") unless (@steps);
+	die("Error: `|' at the tail of `| linkPath' at line $line (write it between two properties)\n")
+		if ($steps[-1] eq '|');
 	return { '@list' => \@steps };
 }
 
