@@ -1027,7 +1027,7 @@ sub generateDomainId {
 	$file =~ s{.*/}{};
 	$file =~ s/[^A-Za-z0-9_]/_/g;
 
-	return '_AutomaticGeneration_' . $file . '_Domain_' . $p;
+	return '_AutomaticGeneration_Super_' . $file . '_' . $p;
 }
 
 #　プロパティの値域(range)へクラスをセット
