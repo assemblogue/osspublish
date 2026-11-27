@@ -12,4 +12,5 @@
   <entry key="file-not-supported">File not supported: {0}</entry>
   <entry key="empty-content">Empty content: {0}</entry>
   <entry key="using-endpoint-url">Using {0}</entry>
+  <entry key="ontology-name-not-found">Could not determine the ontology name from the first cell (A1) of the spreadsheet: {0}</entry>
 </properties>

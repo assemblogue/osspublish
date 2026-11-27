@@ -352,11 +352,13 @@ class Client {
 			return url.replace(Regex("(https://docs\\.google\\.com/spreadsheets/.*)/(edit|view)([#\\?].*|)"), "$1/export")
 		}
 
-		fun findOntologyName(bytes: ByteArray): String {
-			val wb = WorkbookFactory.create(bytes.inputStream())
-			val sheet = wb.getSheetAt(0)
-			val text = sheet.getRow(0).getCell(0).stringCellValue
-			return text.split(Regex("\\s"), 3)[1]
+		fun findOntologyName(bytes: ByteArray): Result<String> = runCatching {
+			val text = WorkbookFactory.create(bytes.inputStream()).use { wb ->
+				wb.getSheetAt(0)?.getRow(0)?.getCell(0)?.stringCellValue
+			}
+			// The first cell is expected to look like "<label> <ontology name> ...".
+			text?.trim()?.split(Regex("\\s+"), 3)?.getOrNull(1)?.takeIf { it.isNotEmpty() }
+				?: throw ClientException("Ontology name not found in the first cell: ${text.orEmpty().ifEmpty { "(empty)" }}")
 		}
 
 		fun readJsonTreeFromString(s: String) = ObjectMapper().readTree(s)
@@ -403,9 +405,12 @@ class Client {
 									throw ClientException("Spreadsheet not retrieved: " + arg)
 								}
 								val bytes = responseBody.bytes()
+								val ontologyName = findOntologyName(bytes)
+									.onFailure { println(res.format("ontology-name-not-found", arg)) }
+									.getOrThrow()
 								convertUsingOnlineService(
 									bytes,
-									findOntologyName(bytes) + ".xlsx",
+									ontologyName + ".xlsx",
 									props.getProperty("plr.oss.endpoint").toHttpUrl()
 								)
 							}

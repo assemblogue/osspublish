@@ -6,6 +6,7 @@ import Client.Companion.conversionWarnings
 import Client.Companion.convertUsingOnlineService
 import Client.Companion.filesToUpload
 import Client.Companion.findExportUrl
+import Client.Companion.findOntologyName
 import Client.Companion.generateOssId
 import Client.Companion.normalizeOssId
 import Client.Companion.parseFileToUpload
@@ -25,9 +26,15 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.mockito.kotlin.*
+import java.io.ByteArrayOutputStream
+import java.net.URL
 
 class ClientTest {
+	private fun resource(name: String): URL =
+		requireNotNull(this.javaClass.getResource("/$name")) { "resource $name is missing" }
+
 	@Test
 	fun testParseFileToUpload() {
 		val f = parseFileToUpload("ontology", ObjectMapper().readTree("""
@@ -204,7 +211,7 @@ class ClientTest {
 
 	@Test
 	fun `open a dummy zip and ensure the stream is closed after`() {
-		this.javaClass.classLoader.getResource("test_dummy.zip")!!.openStream().use { stream ->
+		resource("test_dummy.zip").openStream().use { stream ->
 			assertEquals("{}", unzipInputStream(stream)["index.json"]!!.trim())
 			assertThrows(java.io.IOException::class.java) {
 				stream.available()
@@ -214,7 +221,7 @@ class ClientTest {
 
 	@Test
 	fun `unzip a large zip as stream`() {
-		val stream = this.javaClass.classLoader.getResource("large.zip")!!.openStream()
+		val stream = resource("large.zip").openStream()
 		val pairs = unzipInputStream(stream)
 		assertEquals(setOf("pg1.txt", "pg2.txt"), pairs.keys.toSet())
 		assertEquals(listOf(120946, 11101), listOf(pairs["pg1.txt"]!!, pairs["pg2.txt"]!!).map{ it.toByteArray().size })
@@ -223,7 +230,7 @@ class ClientTest {
 	@Test
 	fun `parses a dummy zip and get an empty index`() {
 		val buffer = Buffer()
-		buffer.writeAll(this.javaClass.classLoader.getResource("test_dummy.zip")!!.openStream().source())
+		buffer.writeAll(resource("test_dummy.zip").openStream().source())
 		val server = MockWebServer()
 		server.enqueue(MockResponse().setBody(buffer))
 		server.start()
@@ -356,5 +363,40 @@ class ClientTest {
 		}
 
 		assertTrue(ex.message!!.contains("input_with_error.csv: Error: no value for"))
+	}
+
+	@Test
+	fun `findOntologyName fails for an empty file`() {
+		assertThrows(Exception::class.java) {
+			findOntologyName("".toByteArray()).getOrThrow()
+		}
+	}
+
+	/** Builds an xlsx whose first cell (A1) holds [a1]. */
+	private fun xlsxWithFirstCell(a1: String): ByteArray {
+		val out = ByteArrayOutputStream()
+		XSSFWorkbook().use { wb ->
+			wb.createSheet().createRow(0).createCell(0).setCellValue(a1)
+			wb.write(out)
+		}
+		return out.toByteArray()
+	}
+
+	@Test
+	fun `findOntologyName finds the ontology name in the first cell`() {
+		val bytes = xlsxWithFirstCell("]O DG ja:談話グラフ;Discourse Graph")
+
+		assertEquals("DG", findOntologyName(bytes).getOrThrow())
+	}
+
+	@Test
+	fun `findOntologyName fails when the first cell of an xlsx is empty`() {
+		val bytes = resource("empty.xlsx").readBytes()
+
+		val ex = assertThrows(ClientException::class.java) {
+			findOntologyName(bytes).getOrThrow()
+		}
+
+		assertEquals("Ontology name not found in the first cell: (empty)", ex.message)
 	}
 }
