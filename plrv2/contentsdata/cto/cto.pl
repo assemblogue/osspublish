@@ -692,7 +692,9 @@ sub parseProperty {
 				}
 				else {
 					# 共通のクラスが無い場合、新しいクラスを生成する。
-					my $atid = generateId("Super", '_SuperClass');
+					# 名前は、定義域を作った属性の id と表（ファイル）の名前から作る——列の位置（generateId）で付けると、
+					# 別の属性の和や別の表の和が同じ名前になり、読み手が1つのクラスに合わせて定義域を誤る（assemblogue/plrDart#746 の続きの調べ）
+					my $atid = generateDomainId($prop->{'@id'});
 					# 自動生成クラスを新規登録(既にあっても問題なし)
 					my $ncls = parseClass($atid, "", "");
 
@@ -1012,6 +1014,20 @@ sub generateId {
 	$atcls = '_AutomaticGeneration_' . $atcls;
 
 	return $atcls;
+}
+
+#  定義域の和の自動生成クラス名: 表（ファイル）の名前と、定義域を作った属性の id で特定する
+sub generateDomainId {
+	my ($propId) = @_;
+
+	my $p = $propId;
+	$p =~ s/^#//;
+	$p =~ s/[^A-Za-z0-9_]/_/g;
+	my $file = $ARGV[0];
+	$file =~ s{.*/}{};
+	$file =~ s/[^A-Za-z0-9_]/_/g;
+
+	return '_AutomaticGeneration_Super_' . $file . '_' . $p;
 }
 
 #　プロパティの値域(range)へクラスをセット
