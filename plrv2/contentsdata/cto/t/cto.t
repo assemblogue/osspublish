@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 68;
+use Test::More tests => 72;
 
 sub run_command {
 	my $command = shift;
@@ -441,6 +441,28 @@ like(errorText('plrTest_meta_on_class'), qr/property-level property `\| onto34' 
 		my @refs = grep { !exists $_->{'@type'} } @{$byId{$c}->{'subClassOf'}};
 		is_deeply(\@refs, [{'@id' => $super}], "plain super: $c refers to the super class by a plain {\"\@id\"}");
 	}
+}
+
+{
+	# 定義域に2つ以上のクラスを書いたら、定義域はそれらのクラスの和（共通の上位にしない。橋田さんの決め 11/28）。
+	# 和は自動生成クラスで表し、書いたクラスをその下位にする。一方が他方の下位なら、定義域は上位のクラス
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_domainUnion');
+	"]O Family ja:家族;Family",\オントロジー,,,
+	"Top ja:上;Top",,,,
+	,"A ja:甲;A",name ja:名前;name,string,
+	,"B ja:乙;B",name,string,
+	,"D ja:丁;D",age ja:年齢;age,integer,
+	,,"E ja:戊;E",age,integer
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_domainUnion.jsonld");
+	my %byId = map { $_->{'@id'} => $_ } @{$p->{'defines'}};
+	my $union = $byId{'#name'}->{'domain'};
+	like($union, qr/^#_AutomaticGeneration_Super_/, 'domain union: the domain is a generated class, not the common super class Top');
+	for my $c ('#A', '#B') {
+		ok((grep { !exists $_->{'@type'} && $_->{'@id'} eq $union } @{$byId{$c}->{'subClassOf'}}),
+		   "domain union: $c is a subclass of the generated class");
+	}
+	is($byId{'#age'}->{'domain'}, '#D', 'domain union: a class and its subclass give the super class itself');
 }
 
 done_testing();

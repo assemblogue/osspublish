@@ -704,43 +704,26 @@ sub parseProperty {
 			parsePropertyIdParams($cls, $id, $idParams);
 
 			# domain調整
-			# 共通のスーパークラスをdomainとする。
+			# 定義域に2つ以上のクラスを書いたら、定義域はそれらのクラスの和（橋田さんの決め 11/28。共通の上位にしない）。
+			# 和は値域と同じく自動生成クラスを1つ作り、書いたクラスをその下位にする（addToUnionClass。和のクラス式は使わない）。
+			# 一方が他方の下位なら、和は上位のクラスそのもの
 			my $domain = $prop->{'domain'};
 
 			unless ($domain) {
 				# domain未設定なら現クラスIDを設定
 				$prop->{'domain'} = $cls->{'@id'};
 			}
-			elsif ($domain =~ /^#_AutomaticGeneration_+.*/) {
-				# 既にdomainが自動生成クラスである場合 subClassOf 追加
-				setSubClassOf($cls, $domain);
-				$typeMap{$cls->{'@id'}} = $cls;
+			elsif (searchDomain($domain, $cls)) {
+				# 現クラスが既に定義域か、その下位（和の成員の下位も）
+			}
+			elsif ($typeMap{$domain} && searchDomain($cls->{'@id'}, $typeMap{$domain})) {
+				# いまの定義域が現クラスの下位：定義域は現クラス
+				$prop->{'domain'} = $cls->{'@id'};
 			}
 			else {
-				# 共通domainを探す
-				my $cmn_domain = checkDomain($domain, $cls);
-				if ($cmn_domain) {
-					$prop->{'domain'} = $cmn_domain;
-				}
-				else {
-					# 共通のクラスが無い場合、新しいクラスを生成する。
-					# 名前は、定義域を作った属性の id と表（ファイル）の名前から作る——列の位置（generateId）で付けると、
-					# 別の属性の和や別の表の和が同じ名前になり、読み手が1つのクラスに合わせて定義域を誤る（assemblogue/plrDart#746 の続きの調べ）
-					my $atid = generateDomainId($prop->{'@id'});
-					# 自動生成クラスを新規登録(既にあっても問題なし)
-					my $ncls = parseClass($atid, "", "");
-
-					# それぞれのsubClassOfに自動生成クラスを追加
-					setSubClassOf($cls, $ncls->{'@id'});
-					$typeMap{$cls->{'@id'}} = $cls;
-
-					my $pcls = $typeMap{$domain};
-					setSubClassOf($pcls, $ncls->{'@id'});
-					##$typeMap{$domain} = $pcls;
-
-					# domain指定
-					$prop->{'domain'} = $ncls->{'@id'};
-				}
+				# 和の名前は、定義域を作った属性の id と表（ファイル）の名前から作る——列の位置（generateId）で付けると、
+				# 別の属性の和や別の表の和が同じ名前になり、読み手が1つのクラスに合わせて定義域を誤る（assemblogue/plrDart#746 の続きの調べ）
+				addToUnionClass($prop, 'domain', generateDomainId($prop->{'@id'}), $cls->{'@id'});
 			}
 		}
 
@@ -789,37 +772,7 @@ sub parseProperty {
     return $prop;
 }
 
-#　共通ドメインの探索
-sub checkDomain {
-    my ($domain, $cls) = @_;
-
-	my $rt = searchDomain($domain, $cls);
-	if ($rt) {
-		return $rt;
-	}
-
-	my $pcls = $typeMap{$domain};
-	unless ($pcls) {
-		return "";
-	}
-
-	my $scof = $pcls->{'subClassOf'};
-	foreach my $scofe (@$scof) {
-		if ($scofe->{'@type'}) {	# 限定は飛ばす（上位クラスは素の参照）
-			next;
-		}
-
-		$domain = $scofe->{'@id'};
-		$rt = checkDomain($domain, $cls);
-		if ($rt) {
-			return $rt;
-		}
-	}
-
-	return "";
-}
-
-#　親クラスを遡り、共通クラスを探す
+#　クラス [$cls] が [$domain] か、その下位か（上位クラスを遡る）。そうなら [$domain]、でなければ ""
 sub searchDomain {
     my ($domain, $cls) = @_;
 
@@ -1062,6 +1015,25 @@ sub generateDomainId {
 	return '_AutomaticGeneration_Super_' . $file . '_' . $p;
 }
 
+# 属性 [$prop] の [$key]（'domain' か 'range'）を、いまの値とクラス [$cls_id]（"#…"）の和にする——和は自動生成クラス
+# [$atid]（"#" の無い id）で表し、和の成員をその下位にする（和のクラス式は使わない：plrDart の spec_kg）。自動生成クラスが
+# 既にあれば（3つ目の成員から）それに足す。成員のクラスがまだ無ければ作る
+sub addToUnionClass {
+	my ($prop, $key, $atid, $cls_id) = @_;
+
+	my $ucls = parseClass($atid, "", "");
+	for my $m ($prop->{$key}, $cls_id) {
+		next if ($m eq $ucls->{'@id'});
+		my $mcls = $typeMap{$m};
+		unless ($mcls) {
+			(my $mid = $m) =~ s/^#//;
+			$mcls = parseClass($mid, "", "");
+		}
+		setSubClassOf($mcls, $ucls->{'@id'});
+	}
+	$prop->{$key} = $ucls->{'@id'};
+}
+
 #　プロパティの値域(range)へクラスをセット
 sub setRangeClass {
 	my ($idParams, $prop) = @_;
@@ -1095,31 +1067,10 @@ sub setRangeClass {
 			#	return;
 			#}
 
-			#  自動生成クラス名: プロパティ名とカラム位置で特定
-			$atid = generateId($prop->{'@id'}, '_SelectorClass');
-
-			# 自動生成クラスはプロパティdomainをスーパークラスとする
-			my $domain_name = $prop->{'domain'};
-			my $domain_cls = $typeMap{"$domain_name"};
-
-			# 自動生成クラスを新規登録(既にあっても問題なし)
-		    ## $pcls = parseClass($atid, "", $domain_cls);  2017.11.15 autogeneration classは単独クラスとする
-			$pcls = parseClass($atid, "", "");
-
-			# 追加するクラスは、自動生成クラスのサブクラス
-			parseClass($cls_id, "", $pcls);
-
-			# 既にrangeが自動生成クラス
-			if ($c_range eq "#$atid") {
-				return;
-			}
-
-			# 新規に自動生成クラスを生成した場合、
-			# 現在rangeに設定されているクラスを自動生成クラスへ登録
-			$pcls = $typeMap{"#$atid"};
-			$c_range =~ s/^#//;
-			parseClass($c_range, "", $pcls);
-			$cls_id = $atid;
+			#  自動生成クラス名: プロパティ名とカラム位置で特定。値域は、いまの値域と追加するクラスの和（定義域と同じ addToUnionClass）
+			addToUnionClass($prop, 'range', generateId($prop->{'@id'}, '_SelectorClass'), "#$cls_id");
+			$prop->{'@type'} = "ObjectProperty";
+			return;
 		}
 		else {
 			# 非選択肢クラスが設定されている。
