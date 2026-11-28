@@ -4,7 +4,7 @@ use IPC::Open2;
 use POSIX ':sys_wait_h';
 use File::Temp qw/tempdir/;
 use JSON::Parse 'json_file_to_perl';
-use Test::More tests => 68;
+use Test::More tests => 70;
 
 sub run_command {
 	my $command = shift;
@@ -441,6 +441,23 @@ like(errorText('plrTest_meta_on_class'), qr/property-level property `\| onto34' 
 		my @refs = grep { !exists $_->{'@type'} } @{$byId{$c}->{'subClassOf'}};
 		is_deeply(\@refs, [{'@id' => $super}], "plain super: $c refers to the super class by a plain {\"\@id\"}");
 	}
+}
+
+{
+	# 値域を2つ書いた属性は、自動で作る1つの和のクラスを値域にし、その成員を unionOf で書く（owl:unionOf と同じ意味。
+	# 読み手が名前でなく宣言で和と見分ける：plrDart の d158）
+	run_command('cto.pl', <<~'EOD', $dir, 'plrTest_rangeUnion');
+	"]O Family ja:家族;Family",\オントロジー,,,
+	"Task ja:タスク;Task",agent ja:担当者;agent,"Person ja:人;Person",,
+	,,"Place ja:場所;Place",,
+	EOD
+	my $p = json_file_to_perl("$dir/plrTest_rangeUnion.jsonld");
+	my %byId = map { $_->{'@id'} => $_ } @{$p->{'defines'}};
+	my $union = $byId{'#agent'}->{'range'};
+	like($union, qr/^#?_AutomaticGeneration_/, 'range union: the range is the generated class');
+	$union = "#$union" unless ($union =~ /^#/);
+	is_deeply([sort map { $_->{'@id'} } @{$byId{$union}->{'unionOf'}}], ['#Person', '#Place'],
+		'range union: the generated class lists its members in unionOf');
 }
 
 done_testing();

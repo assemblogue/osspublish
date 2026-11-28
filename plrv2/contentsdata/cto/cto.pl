@@ -1062,6 +1062,13 @@ sub generateDomainId {
 	return '_AutomaticGeneration_Super_' . $file . '_' . $p;
 }
 
+# 値域の和の自動生成クラス [$union] に、成員 [$id] を足す（同じ成員は1つ）——owl:unionOf と同じ意味の宣言 unionOf
+sub addUnionMember {
+	my ($union, $id) = @_;
+	$union->{'unionOf'} //= [];
+	push(@{$union->{'unionOf'}}, { '@id' => $id }) unless (grep { $_->{'@id'} eq $id } @{$union->{'unionOf'}});
+}
+
 #　プロパティの値域(range)へクラスをセット
 sub setRangeClass {
 	my ($idParams, $prop) = @_;
@@ -1108,6 +1115,8 @@ sub setRangeClass {
 
 			# 追加するクラスは、自動生成クラスのサブクラス
 			parseClass($cls_id, "", $pcls);
+			# 自動生成クラスは値域の和：成員を unionOf に書く（読み手が名前でなく宣言で和と見分ける）
+			addUnionMember($pcls, "#$cls_id");
 
 			# 既にrangeが自動生成クラス
 			if ($c_range eq "#$atid") {
@@ -1119,6 +1128,7 @@ sub setRangeClass {
 			$pcls = $typeMap{"#$atid"};
 			$c_range =~ s/^#//;
 			parseClass($c_range, "", $pcls);
+			addUnionMember($pcls, "#$c_range");
 			$cls_id = $atid;
 		}
 		else {
